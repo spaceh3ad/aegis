@@ -1,8 +1,0 @@
-/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/deps/solana_address_lookup_table_interface-6e1eda11b6eeb4b6.d: /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/lib.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/error.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/instruction.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/state.rs
-
-/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/deps/libsolana_address_lookup_table_interface-6e1eda11b6eeb4b6.rmeta: /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/lib.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/error.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/instruction.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/state.rs
-
-/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/lib.rs:
-/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/error.rs:
-/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/instruction.rs:
-/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/solana-address-lookup-table-interface-2.2.2/src/state.rs:
