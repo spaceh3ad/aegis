@@ -17,6 +17,7 @@ pub enum BlocklistError {
     InvalidPubkey { line: usize, source: bs58::decode::Error },
 }
 
+#[derive(Clone)]
 pub struct Blocklist {
     inner: Arc<ArcSwap<AHashSet<[u8; 32]>>>,
 }

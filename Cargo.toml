@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/aegis-core", "crates/aegis-proxy", "crates/aegis-bench"]
+exclude = ["plugins/zero-fee-filter"]
 resolver = "2"
 
 [workspace.dependencies]

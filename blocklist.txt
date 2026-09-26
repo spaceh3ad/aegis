@@ -1,0 +1,15 @@
+# Aegis-SVM blocklist — OFAC SDN sample + known exploiters
+# Format: one base58 pubkey per line, lines starting with # are ignored
+
+# OFAC SDN — Lazarus Group (Ronin Bridge exploit)
+CVC5aBX8ckVF2ByAKRXjg9gPMqYNNCSBFkSRuGvxLbzv
+
+# Lazarus-linked mixer addresses (sanctioned 2022-08-08)
+6YS2nHPaXHyMT5fEUKdSoiMwNEMBkNPt4RWbg5E26Uo7
+FsaLodPu4VmSwXGr3gWfwANe4vKf8sPSimWpit8ZCP49
+
+# Euler Finance exploiter (2023-03-13)
+b58XkVBScwj6oXhFbD2sGYJRprjJgwpGZADVRKuuSEB
+
+# Wormhole bridge exploiter (2022-02-02)
+Gpkm6DG2L5K5qMvVeGm3yqD2oS6sZPWtepZTxGFGHxLv

@@ -5,6 +5,9 @@ edition = "2021"
 
 [dependencies]
 aegis-core = { path = "../aegis-core" }
+solana-sdk = { workspace = true }
+base64 = { workspace = true }
+bincode = { workspace = true }
 
 [[bench]]
 name = "pipeline"

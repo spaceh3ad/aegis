@@ -1,1 +1,6 @@
 /target/
+/plugins/zero-fee-filter/target/
+*.wasm
+!plugins/zero-fee-filter.wasm
+.env
+*.log

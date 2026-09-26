@@ -136,6 +136,46 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_v0_tx() {
+        use solana_sdk::{
+            message::{v0, v0::MessageAddressTableLookup, MessageHeader, VersionedMessage},
+            transaction::VersionedTransaction,
+        };
+
+        let payer = Keypair::new();
+        let lut_key = Pubkey::new_unique();
+
+        let v0_msg = v0::Message {
+            header: MessageHeader {
+                num_required_signatures: 1,
+                num_readonly_signed_accounts: 0,
+                num_readonly_unsigned_accounts: 0,
+            },
+            account_keys: vec![payer.pubkey()],
+            recent_blockhash: Hash::default(),
+            instructions: vec![],
+            address_table_lookups: vec![MessageAddressTableLookup {
+                account_key: lut_key,
+                writable_indexes: vec![0],
+                readonly_indexes: vec![],
+            }],
+        };
+
+        let tx = VersionedTransaction {
+            signatures: vec![solana_sdk::signature::Signature::default()],
+            message: VersionedMessage::V0(v0_msg),
+        };
+
+        let b64 = STANDARD.encode(bincode::serialize(&tx).unwrap());
+        let result = parse_transaction(&b64).unwrap();
+
+        assert_eq!(result.lut_refs.len(), 1);
+        assert_eq!(result.lut_refs[0], lut_key.to_bytes());
+        assert_eq!(result.signers.len(), 1);
+        assert_eq!(result.signers[0], payer.pubkey().to_bytes());
+    }
+
+    #[test]
     fn test_parse_invalid_b64() {
         let err = parse_transaction("!!!not_valid_base64!!!").unwrap_err();
         assert!(matches!(err, ParseError::InvalidBase64(_)));
