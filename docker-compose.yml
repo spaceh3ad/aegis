@@ -1,6 +1,6 @@
 services:
   validator:
-    image: solanalabs/solana:v2.1.21
+    image: solanalabs/solana:v1.18.26
     command: >
       solana-test-validator
       --rpc-port 8900
