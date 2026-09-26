@@ -112,10 +112,47 @@ fn bench_full_pipeline(c: &mut Criterion) {
     });
 }
 
+/// Proves O(1) lookup scales: a 50 000-entry blocklist hits the same latency as a 1-entry one.
+fn bench_blocklist_at_scale(c: &mut Criterion) {
+    const N: usize = 50_000;
+
+    let blocked = Pubkey::new_unique();
+    let blocked_str = blocked.to_string();
+
+    // Build a temp file with N-1 random entries + the blocked key
+    let path = std::env::temp_dir().join(format!("aegis_bench_50k_{}.txt", std::process::id()));
+    {
+        let mut f = std::fs::File::create(&path).unwrap();
+        for _ in 0..(N - 1) {
+            writeln!(f, "{}", Pubkey::new_unique()).unwrap();
+        }
+        writeln!(f, "{}", blocked_str).unwrap();
+    }
+    let _cleanup = tempfile_helper::TempFile(path.clone());
+    let blocklist = Blocklist::load_from_file(&path).unwrap();
+
+    let clean_keys: Vec<Pubkey> = (0..4).map(|_| Pubkey::new_unique()).collect();
+    let clean_b64 = make_v0_tx(&clean_keys);
+    let blocked_b64 = make_v0_tx(&[blocked]);
+
+    let clean_tx = parse_transaction(&clean_b64).unwrap();
+    let blocked_tx = parse_transaction(&blocked_b64).unwrap();
+
+    let mut group = c.benchmark_group("blocklist_50k_entries");
+    group.bench_function("allow", |b| {
+        b.iter(|| blocklist.check(black_box(&clean_tx)))
+    });
+    group.bench_function("block", |b| {
+        b.iter(|| blocklist.check(black_box(&blocked_tx)))
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_parse_transaction,
     bench_blocklist_check,
-    bench_full_pipeline
+    bench_full_pipeline,
+    bench_blocklist_at_scale,
 );
 criterion_main!(benches);

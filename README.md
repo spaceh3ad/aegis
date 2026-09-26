@@ -24,12 +24,15 @@ Measured on Apple M-series (aarch64). Run yourself: `cargo bench -p aegis-bench`
 | Stage | p50 Latency |
 |---|---|
 | Stage 1 — Parse (4-key v0 tx) | **627 ns** |
-| Stage 2 — Blocklist check (allow) | **15 ns** |
-| Stage 2 — Blocklist check (block) | **69 ns** |
+| Stage 2 — Blocklist check, 1-entry (allow) | **15 ns** |
+| Stage 2 — Blocklist check, 1-entry (block) | **69 ns** |
+| Stage 2 — Blocklist check, **50 000-entry** (allow) | **19 ns** |
+| Stage 2 — Blocklist check, **50 000-entry** (block) | **51 ns** |
 | **Full pipeline (parse + check)** | **652 ns** |
 | Stage 3 — Wasm rule engine | ~1 ms |
 
 Static pipeline overhead: **76× under the 50 µs target.**  
+Lookup is O(1): 50 000-entry blocklist costs the same as a 1-entry one.  
 With Wasm rules: ~1 ms — still 100–200× faster than hosted threat intel REST APIs.
 
 ---

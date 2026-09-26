@@ -1,0 +1,9 @@
+# Aegis-SVM default configuration
+# All values can be overridden by environment variables.
+
+listen_addr    = "0.0.0.0:8899"
+downstream_url = "http://127.0.0.1:8900"
+blocklist_path = "blocklist.txt"
+
+# Uncomment to enable Stage 3 Wasm rule engine:
+# wasm_plugin_path = "plugins/zero-fee-filter.wasm"
