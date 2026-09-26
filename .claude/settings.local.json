@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export COLOSSEUM_COPILOT_API_BASE=\"https://copilot.colosseum.com/api/v1\")",
+      "Bash(export COLOSSEUM_COPILOT_PAT=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzY29wZSI6ImNvbG9zc2V1bV9jb3BpbG90OnJlYWQiLCJ1c2VybmFtZSI6InNwYWNlaDNhZCIsImRpc3BsYXlOYW1lIjoiSm9zaHVhIEpvaG5zb24iLCJyb2xlcyI6W10sInRva2VuVmVyc2lvbiI6MywiaWF0IjoxNzkwMzc3NTA0LCJhdWQiOiJjb2xvc3NldW1fY29waWxvdCIsInN1YiI6IjgyODA4IiwiZXhwIjoxNzk4MTUzNTA0LCJqdGkiOiI2N2E0MGVlZC04NmZiLTQyMTUtYWMwMC1lOTU1NTE1OTE0NjYifQ.GZ6LVxlyIKWM_GEbdgre_wj9VKS37GZVCXimZmg1Ns0\")",
+      "Bash(curl -s -X POST https://copilot.colosseum.com/api/v1/search/projects -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"query\": \"transaction firewall security proxy RPC Solana\", \"limit\": 8}')",
+      "Bash(curl -s -X POST https://copilot.colosseum.com/api/v1/search/projects -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"query\": \"OFAC sanctions compliance screening blockchain\", \"limit\": 6}')",
+      "Bash(curl -s -X POST https://copilot.colosseum.com/api/v1/search/projects -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"query\": \"RPC spam filter rate limiting validator node infrastructure\", \"limit\": 6}')",
+      "Bash(curl -s -X POST https://copilot.colosseum.com/api/v1/search/projects -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"query\": \"security compliance transaction screening Solana\", \"limit\": 6, \"filters\": {\"acceleratorOnly\": true}}')",
+      "Bash(curl -s https://copilot.colosseum.com/api/v1/archives/d21650be-ec37-4069-b699-5fff4dd994e1 -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(curl -s -X POST https://copilot.colosseum.com/api/v1/search/projects -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"query\": \"security compliance transaction screening proxy validator\", \"limit\": 6, \"filters\": {\"winnersOnly\": true}}')",
+      "Bash(mkdir -p /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/docs/wayfinder/tickets)",
+      "Bash(mkdir -p /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/docs/adr)"
+    ]
+  }
+}
