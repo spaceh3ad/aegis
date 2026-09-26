@@ -1,0 +1,12 @@
+/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/deps/serde-529927abffbced68.d: /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/serde-661fd1284e84cfe7/out/private.rs
+
+/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/deps/libserde-529927abffbced68.rmeta: /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/serde-661fd1284e84cfe7/out/private.rs
+
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/lib.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/integer128.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/mod.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/de.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.229/src/private/ser.rs:
+/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/serde-661fd1284e84cfe7/out/private.rs:
+
+# env-dep:OUT_DIR=/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/serde-661fd1284e84cfe7/out

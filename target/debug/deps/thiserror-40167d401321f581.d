@@ -1,0 +1,12 @@
+/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/deps/thiserror-40167d401321f581.d: /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/lib.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/aserror.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/display.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/var.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/private.rs /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/thiserror-87f94618680aaf91/out/private.rs
+
+/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/deps/libthiserror-40167d401321f581.rmeta: /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/lib.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/aserror.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/display.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/var.rs /Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/private.rs /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/thiserror-87f94618680aaf91/out/private.rs
+
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/lib.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/aserror.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/display.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/var.rs:
+/Users/jan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/thiserror-2.0.21/src/private.rs:
+/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/thiserror-87f94618680aaf91/out/private.rs:
+
+# env-dep:OUT_DIR=/Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/target/debug/build/thiserror-87f94618680aaf91/out

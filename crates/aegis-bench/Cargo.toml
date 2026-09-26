@@ -1,0 +1,14 @@
+[package]
+name = "aegis-bench"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aegis-core = { path = "../aegis-core" }
+
+[[bench]]
+name = "pipeline"
+harness = false
+
+[dev-dependencies]
+criterion = { workspace = true }
