@@ -1,4 +1,4 @@
-use aegis_core::{parse_transaction, Blocklist};
+use aegis_core::{parse_evm_transaction, parse_transaction, AddressSets, Blocklist};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use solana_sdk::{
@@ -148,11 +148,53 @@ fn bench_blocklist_at_scale(c: &mut Criterion) {
     group.finish();
 }
 
+fn raw_evm_tx() -> String {
+    use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
+    use alloy_eips::eip2718::Encodable2718;
+    use alloy_primitives::{Address, Bytes, TxKind, U256};
+    use alloy_signer::SignerSync;
+
+    let signer = alloy_signer_local::PrivateKeySigner::random();
+    let tx = TxEip1559 {
+        chain_id: 8453,
+        nonce: 0,
+        gas_limit: 60_000,
+        max_fee_per_gas: 1_000_000_000,
+        max_priority_fee_per_gas: 1_000_000,
+        to: TxKind::Call(Address::repeat_byte(0x11)),
+        value: U256::ZERO,
+        access_list: Default::default(),
+        input: Bytes::from(vec![0xa9, 0x05, 0x9c, 0xbb, 0, 0, 0, 0]),
+    };
+    let sig = signer.sign_hash_sync(&tx.signature_hash()).unwrap();
+    let env: TxEnvelope = tx.into_signed(sig).into();
+    format!("0x{}", hex::encode(env.encoded_2718()))
+}
+
+/// EVM cost is dominated by secp256k1 signer recovery, not by the blocklist lookup.
+fn bench_evm_pipeline(c: &mut Criterion) {
+    let raw = raw_evm_tx();
+    let blocklist = Blocklist::new(AddressSets::default());
+
+    let mut group = c.benchmark_group("evm");
+    group.bench_function("parse_and_recover_1559", |b| {
+        b.iter(|| parse_evm_transaction(black_box(&raw)).unwrap())
+    });
+    group.bench_function("full_pipeline/allow", |b| {
+        b.iter(|| {
+            let tx = parse_evm_transaction(black_box(&raw)).unwrap();
+            blocklist.check_evm(black_box(&tx))
+        })
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_parse_transaction,
     bench_blocklist_check,
     bench_full_pipeline,
     bench_blocklist_at_scale,
+    bench_evm_pipeline,
 );
 criterion_main!(benches);

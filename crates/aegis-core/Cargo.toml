@@ -14,3 +14,12 @@ thiserror = { workspace = true }
 arc-swap = { workspace = true }
 bs58 = { workspace = true }
 extism = "1"
+alloy-consensus = { workspace = true }
+alloy-eips = { workspace = true }
+alloy-primitives = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+alloy-signer = { workspace = true }
+alloy-signer-local = { workspace = true }

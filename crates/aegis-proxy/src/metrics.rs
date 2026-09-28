@@ -7,6 +7,7 @@ pub struct Metrics {
     pub inspection_duration: Histogram,
     pub blocklist_size: Gauge,
     pub downstream_up: Gauge,
+    pub feed_refresh_total: CounterVec,
     registry: Registry,
 }
 
@@ -38,6 +39,12 @@ impl Metrics {
             "1 if downstream validator is reachable, 0 if not",
         ))?;
 
+        let feed_refresh_total = CounterVec::new(
+            Opts::new("aegis_feed_refresh_total", "Threat feed refresh attempts by feed and result"),
+            &["feed", "result"],
+        )?;
+
+        registry.register(Box::new(feed_refresh_total.clone()))?;
         registry.register(Box::new(transactions_total.clone()))?;
         registry.register(Box::new(transactions_blocked_total.clone()))?;
         registry.register(Box::new(inspection_duration.clone()))?;
@@ -50,6 +57,7 @@ impl Metrics {
             inspection_duration,
             blocklist_size,
             downstream_up,
+            feed_refresh_total,
             registry,
         })
     }

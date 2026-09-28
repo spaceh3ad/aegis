@@ -1,9 +1,16 @@
-# Aegis-SVM default configuration
+# Aegis default configuration
 # All values can be overridden by environment variables.
 
 listen_addr    = "0.0.0.0:8899"
+# Solana RPC (e.g. :8900) or EVM execution client (e.g. :8545)
 downstream_url = "http://127.0.0.1:8900"
+# Mixed Solana (base58) and EVM (0x hex) addresses, one per line
 blocklist_path = "blocklist.txt"
 
-# Uncomment to enable Stage 3 Wasm rule engine:
+# Operator-selected threat feeds (env: THREAT_FEEDS="name=url,name2=url2").
+# Rejections are attributed as rule_id "blocklist:<name>".
+# threat_feeds = [{ name = "internal", url = "https://intel.example/list.txt" }]
+# threat_feed_interval_secs = 300
+
+# Uncomment to enable the Wasm rule engine:
 # wasm_plugin_path = "plugins/zero-fee-filter.wasm"

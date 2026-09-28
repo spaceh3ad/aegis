@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Aegis-SVM live demo — runs against a locally started proxy
+# Aegis live demo — runs against a locally started proxy
 # Usage: ./demo/demo.sh [proxy_url]
 set -euo pipefail
 
@@ -53,7 +53,7 @@ print(base64.b64encode(tx).decode())
 PYEOF
 }
 
-# Known-blocked key from blocklist.txt (Lazarus group)
+# Known-blocked key from blocklist.txt
 BLOCKED_KEY_HEX="$(python3 -c "
 import base58
 k = base58.b58decode('CVC5aBX8ckVF2ByAKRXjg9gPMqYNNCSBFkSRuGvxLbzv')
@@ -63,7 +63,7 @@ print(k.hex())
 # Fallback: use So11111111111111111111111111111111111111112 (always in test blocklists)
 FALLBACK_KEY_HEX="0000000000000000000000000000000000000000000000000000000000000001"
 
-banner "Aegis-SVM Demo"
+banner "Aegis Demo"
 info "Target proxy: $PROXY"
 
 wait_for_proxy
@@ -107,7 +107,7 @@ else
 fi
 
 # ── Test 4: Blocked sendTransaction ───────────────────────────────────────
-banner "Test 4 — Blocked sendTransaction (OFAC SDN wallet)"
+banner "Test 4 — Blocked sendTransaction (blocklisted address)"
 # Use So11111111111111111111111111111111111111112 = system program, always loaded in test blocklists
 # pubkey bytes: all zeros except last byte = 1
 BLOCKED_B64="$(make_tx_b64 "$FALLBACK_KEY_HEX")"
@@ -120,7 +120,7 @@ if [ "$code" = "-32001" ]; then
     rule=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['error']['data']['rule_id'])" 2>/dev/null)
     trace=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['error']['data']['trace_id'])" 2>/dev/null)
     blocked "Transaction REJECTED — code=$code, rule_id=$rule, trace_id=$trace"
-    ok "OFAC block working correctly"
+    ok "Address list block working correctly"
 else
     info "Key not in this deployment's blocklist (code=$code) — expected if running with default blocklist.txt"
     info "Response: $resp"

@@ -1,113 +1,118 @@
-# Aegis-SVM
+# Aegis
 
-**Open-core, sub-microsecond Solana JSON-RPC reverse proxy that intercepts and screens `sendTransaction` traffic before it reaches the validator.**
+**A programmable, wire-speed transaction firewall for RPC infrastructure. One sidecar binary for Solana and EVM chains.**
+
+Aegis sits in front of your RPC node, the way Envoy or a WAF sits in front of a web app. It decodes every transaction submission (`sendTransaction`, `eth_sendRawTransaction`) and runs it through operator-defined policy before it reaches the node. That takes under 1 µs on Solana and about 26 µs on EVM.
 
 ---
 
-## The Problem
+## Why
+
+RPC operators have to handle submitted transactions they don't want to carry: spam that burns compute, zero-fee bots competing for block space, drainer and exploit traffic, and, for regulated operators, sanctioned counterparties. The current options are either too slow or blind to what's inside the transaction:
 
 | Solution | Latency | Flaw |
 |---|---|---|
-| Blowfish / TRM REST APIs | 80–250 ms | Destroys Solana slot execution |
-| Wallet extensions | 0 ms | Client-side only — bypassed trivially |
-| Helius / QuickNode WAFs | < 1 ms | Inspect HTTP metadata, not tx internals |
-| On-chain blacklists | 0 ms | Rent cost prohibitive; CU overhead |
+| Hosted threat-intel REST APIs | 80–250 ms | Too slow for the transaction hot path |
+| Wallet extensions | 0 ms | Client-side only, trivially bypassed |
+| HTTP-level WAFs | < 1 ms | See headers and IPs, not transaction internals |
+| On-chain blacklists | 0 ms | Rent/gas cost, compute overhead, protocol-level |
 
-Aegis-SVM operates at the **RPC ingress layer** — inline, sub-millisecond, and decoding the full transaction before it touches the validator.
+## Design principles
+
+- **Sovereign sidecar, not a cloud chokepoint.** Aegis runs on the operator's own hardware. No traffic is routed through us, and there is no central switch.
+- **Operators own the policy.** Every rule, list, and feed is chosen and loaded by the operator. Aegis ships with nothing enabled.
+- **Engine and data are separate.** Aegis does not curate address lists. It subscribes to whichever feeds the operator trusts (their own list, SEAL, TRM, Chainalysis, …), and every rejection names the source responsible (`blocklist:<feed>`).
+- **Fail open on parse errors, fail safe on feed errors.** Undecodable transactions are forwarded, because the node rejects them with the same decoder. A feed outage keeps the last good copy, so a list never silently empties.
+
+## Policy layers
+
+```
+Layer 3  Programmable Wasm rules      spam / fee policy / MEV / custom logic   ~1 ms
+Layer 2  Threat-intel feeds           operator-selected, hot-reloaded          O(1)
+Layer 1  Static address lists         local file, Solana + EVM in one format   O(1)
+```
 
 ---
 
 ## Benchmarks
 
-Measured on Apple M-series (aarch64). Run yourself: `cargo bench -p aegis-bench`
+Apple M-series (aarch64). Reproduce with `cargo bench -p aegis-bench`.
 
-| Stage | p50 Latency |
+| Stage | p50 |
 |---|---|
-| Stage 1 — Parse (4-key v0 tx) | **627 ns** |
-| Stage 2 — Blocklist check, 1-entry (allow) | **15 ns** |
-| Stage 2 — Blocklist check, 1-entry (block) | **69 ns** |
-| Stage 2 — Blocklist check, **50 000-entry** (allow) | **19 ns** |
-| Stage 2 — Blocklist check, **50 000-entry** (block) | **51 ns** |
-| **Full pipeline (parse + check)** | **652 ns** |
-| Stage 3 — Wasm rule engine | ~1 ms |
+| Solana: parse v0 tx (4 keys) | **722 ns** |
+| Solana: address list check (allow) | **17 ns** |
+| Solana: address list check, **50 000 entries** (allow) | **18 ns** |
+| **Solana: full pipeline (parse + check)** | **700 ns** |
+| EVM: RLP decode + secp256k1 signer recovery | **26 µs** |
+| **EVM: full pipeline** | **26 µs** |
+| Wasm rule engine (either chain) | ~1 ms |
 
-Static pipeline overhead: **76× under the 50 µs target.**  
-Lookup is O(1): 50 000-entry blocklist costs the same as a 1-entry one.  
-With Wasm rules: ~1 ms — still 100–200× faster than hosted threat intel REST APIs.
+Lookup is O(1): a 50 000-entry list costs the same as a 1-entry one. EVM cost is dominated by recovering the sender from the signature, which is unavoidable when screening senders.
 
 ---
 
 ## Architecture
 
 ```
-[ RPC Client ]
-      │
-      ▼
-┌─────────────────────────────────────────┐
-│            AEGIS-SVM PROXY              │
-│                                         │
-│  1. JSON-RPC parse → method dispatch    │
-│  2. base64 decode → VersionedTx         │
-│     extract: signers, programs, LUTs    │
-│  3. AHashSet<[u8;32]> blocklist check   │  ← sub-µs
-│  4. Optional: Extism Wasm rule engine   │  ← ~1 ms
-│                                         │
-│  Block → JSON-RPC error (-32001/-32002) │
-│  Allow → forward to downstream RPC      │
-└─────────────────────────────────────────┘
-      │
-      ▼
-[ solana-validator / TPU ]
+[ Client / wallet / bot ]
+          │  JSON-RPC (single or batch)
+          ▼
+┌───────────────────────────────────────────────────────┐
+│                         AEGIS                         │
+│                                                       │
+│  sendTransaction        base58/base64 → VersionedTx   │
+│                         signers, programs, LUTs,      │
+│                         ComputeBudget limit + price   │
+│  eth_sendRawTransaction EIP-2718 → recover sender     │
+│                         to, selector, gas, tip        │
+│                                                       │
+│  1. Address lists  (file ∪ feeds, per-source tagged)  │
+│  2. Wasm rules     (chain-agnostic JSON input)        │
+│                                                       │
+│  Block → JSON-RPC error (-32001 list / -32002 rule)   │
+│  Batch → blocked entries answered locally,            │
+│          remainder forwarded as a smaller batch       │
+│  Other methods → forwarded untouched                  │
+└───────────────────────────────────────────────────────┘
+          │
+          ▼
+[ Solana validator / RPC node   or   geth / reth / op-node ]
 ```
 
-**Hot reload:** Send `SIGHUP` to atomically swap the blocklist and Wasm plugin without dropping connections.
+The same binary serves any chain. Point `DOWNSTREAM_URL` at a Solana RPC or an EVM execution client, and the method name picks the pipeline.
 
-**Metrics:** Prometheus endpoint at `/metrics` — inspection latency histogram (µs buckets), tx/s by verdict, downstream health.
+**Hot reload:** `SIGHUP` atomically swaps the local list and the Wasm plugin without dropping connections. Feeds refresh on their own interval.
+
+**Metrics:** Prometheus at `/metrics`. Covers the inspection latency histogram, verdicts, blocks by `rule_id`, list size, downstream health, and feed refresh results.
 
 ---
 
-## Quick Start
-
-### Local (no Docker)
+## Quick start
 
 ```bash
-# Build
 cargo build --release -p aegis-proxy
 
-# Run (forwards to local validator on :8900)
-BLOCKLIST_PATH=blocklist.txt ./target/release/aegis-proxy
+# Solana
+DOWNSTREAM_URL=http://127.0.0.1:8900 ./target/release/aegis-proxy
 
-# With Wasm rules
-WASM_PLUGIN_PATH=plugins/zero-fee-filter.wasm ./target/release/aegis-proxy
+# EVM (e.g. Base / Arbitrum / Ethereum node)
+DOWNSTREAM_URL=http://127.0.0.1:8545 LISTEN_ADDR=0.0.0.0:8546 ./target/release/aegis-proxy
 
-# Test
-curl -X POST http://localhost:8899 \
-  -H "content-type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"getBalance","params":["11111111111111111111111111111111"]}'
+# With operator-selected threat feeds and a Wasm rule
+THREAT_FEEDS="seal=https://example.org/seal.txt,internal=https://intel.corp/list.txt" \
+WASM_PLUGIN_PATH=plugins/zero-fee-filter.wasm \
+./target/release/aegis-proxy
 ```
 
-### Docker Compose (full stack)
+### Docker Compose (Solana demo stack)
 
 ```bash
 docker compose up
-```
-
-Starts four services:
-- `aegis` — proxy on `:8899`
-- `validator` — `solana-test-validator` on `:8900`
-- `prometheus` — metrics scraper on `:9090`
-- `grafana` — dashboard at `http://localhost:3000`
-
-### Demo script
-
-```bash
-# Against local proxy:
-bash demo/demo.sh http://localhost:8899
-
-# Against Docker:
-docker compose up -d
 bash demo/demo.sh
 ```
+
+Starts `aegis` (:8899), `solana-test-validator` (:8900), Prometheus (:9090) and Grafana (http://localhost:3000).
 
 ---
 
@@ -116,52 +121,61 @@ bash demo/demo.sh
 | Env var | Default | Description |
 |---|---|---|
 | `LISTEN_ADDR` | `0.0.0.0:8899` | Proxy bind address |
-| `DOWNSTREAM_URL` | `http://127.0.0.1:8900` | Validator RPC URL |
-| `BLOCKLIST_PATH` | `blocklist.txt` | One base58 pubkey per line |
-| `WASM_PLUGIN_PATH` | _(unset)_ | Path to `.wasm` rule plugin |
+| `DOWNSTREAM_URL` | `http://127.0.0.1:8900` | Solana RPC or EVM execution client |
+| `BLOCKLIST_PATH` | `blocklist.txt` | Local address list (see format below) |
+| `THREAT_FEEDS` | _(unset)_ | `name=url,name2=url2`. Each feed uses the same text format |
+| `THREAT_FEED_INTERVAL_SECS` | `300` | Feed refresh interval |
+| `WASM_PLUGIN_PATH` | _(unset)_ | Path to a `.wasm` rule plugin |
+
+## Address list format
+
+One address per line. Solana (base58) and EVM (`0x` hex) entries can be mixed, and `#` starts a comment. Invalid lines reject the whole file or feed, so a bad update is never partially applied.
+
+```
+# local operator list
+CVC5aBX8ckVF2ByAKRXjg9gPMqYNNCSBFkSRuGvxLbzv
+0x098B716B8Aaf21512996dC57EB0615e2383E2f96
+```
+
+On EVM, both the recovered sender and the call target are screened.
 
 ---
 
-## Blocklist Format
+## Writing Wasm rules
 
-```
-# Lines starting with # are ignored
-So11111111111111111111111111111111111111112
-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
-```
+Rules are ordinary Rust (or any Extism-supported language) compiled to `wasm32-wasip1`. Each rule receives one chain-agnostic JSON object:
 
-Reload without restart: `kill -HUP <pid>`
+| Field | Solana | EVM |
+|---|---|---|
+| `chain` | `"svm"` | `"evm"` |
+| `signers` | fee payer + co-signers (base58) | recovered sender (`0x…`) |
+| `programs` | invoked program ids | call target (empty on create) |
+| `cu_requested` | ComputeBudget unit limit (0 if unset) | gas limit |
+| `priority_fee` | ComputeBudget unit price (0 if unset) | priority fee / legacy gas price |
+| `chain_id`, `selector`, `value_wei` | _(absent)_ | chain id, 4-byte selector, value |
 
----
-
-## Writing Custom Wasm Rules
-
-Rules are compiled to `wasm32-wasip1` using [extism-pdk](https://github.com/extism/extism):
+The rule returns `{"verdict": "allow" | "block" | "drop", "rule_id": "...", "message": "..."}`.
 
 ```rust
-// plugins/my-rule/src/lib.rs
 use extism_pdk::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
-struct Input {
-    signers: Vec<String>,
-    programs: Vec<String>,
-    cu_requested: u64,
-    priority_fee: u64,
-}
+struct Input { chain: String, #[serde(default)] selector: Option<String> }
 
 #[derive(Serialize)]
 struct Output { verdict: &'static str, rule_id: &'static str, message: &'static str }
 
+// Example: refuse unlimited ERC-20 approvals on EVM.
 #[plugin_fn]
 pub fn evaluate(input: Json<Input>) -> FnResult<Json<Output>> {
     let input = input.0;
-    if input.cu_requested > 200_000 && input.priority_fee == 0 {
-        Ok(Json(Output { verdict: "block", rule_id: "my-rule", message: "blocked" }))
+    let block = input.chain == "evm" && input.selector.as_deref() == Some("0x095ea7b3");
+    Ok(Json(if block {
+        Output { verdict: "block", rule_id: "approve-guard", message: "approve() blocked by policy" }
     } else {
-        Ok(Json(Output { verdict: "allow", rule_id: "", message: "" }))
-    }
+        Output { verdict: "allow", rule_id: "", message: "" }
+    }))
 }
 ```
 
@@ -170,43 +184,36 @@ cargo build --release --target wasm32-wasip1
 WASM_PLUGIN_PATH=target/wasm32-wasip1/release/my_rule.wasm ./target/release/aegis-proxy
 ```
 
-The included `plugins/zero-fee-filter.wasm` blocks `cu_requested > 400_000 && priority_fee == 0`.
+The bundled `plugins/zero-fee-filter.wasm` blocks Solana transactions that request more than 400k CU with a zero priority fee.
 
 ---
 
-## Crate Structure
+## Crate structure
 
 ```
 crates/
-  aegis-core/     — pure library: parser, blocklist, Wasm engine
-  aegis-proxy/    — axum server, config, metrics, request pipeline
-  aegis-bench/    — Criterion benchmarks
+  aegis-core/   parsers (Solana, EVM), address lists, Wasm engine
+  aegis-proxy/  axum server, config, feeds, metrics, request pipeline
+  aegis-bench/  Criterion benchmarks
 plugins/
-  zero-fee-filter/  — sample Wasm rule (Rust guest)
-  zero-fee-filter.wasm  — pre-built plugin binary
-infra/
-  prometheus.yml
-  grafana/provisioning/
-demo/
-  demo.sh
+  zero-fee-filter/       sample Wasm rule (Rust guest)
+  zero-fee-filter.wasm   pre-built plugin
+infra/                   Prometheus + Grafana provisioning
+demo/demo.sh
 ```
 
----
-
-## Running Tests
+## Tests
 
 ```bash
 cargo test --workspace
 ```
 
-13 tests: 9 unit (parser, blocklist, Wasm engine) + 4 integration (proxy pipeline, metrics, OFAC block).
-
----
+Unit, integration, and property-based tests (proptest). The property tests fuzz both parsers, the list format, and the feed config with arbitrary input, and check invariants: a transaction is blocked iff it touches a listed address, merged feeds form an attributed union, and base58 and base64 decodes agree.
 
 ## Roadmap
 
-- [ ] Address Lookup Table cache (Geyser/Yellowstone sync for v0 LUT expansion)
+- [ ] Address Lookup Table expansion (Geyser/Yellowstone sync) so v0 LUT-resolved accounts are screened
+- [ ] Method-level rate limiting and `getProgramAccounts` cost guards
 - [ ] Staked connection pass-through (SWQoS / Jito forwarding)
-- [ ] Auto-updating OFAC/threat intel feeds (Chainalysis, TRM, Elliptic)
-- [ ] HA clustering with distributed rate limiting
-- [ ] Compliance audit dashboard with signed rejection receipts
+- [ ] Signed rejection receipts for audit trails
+- [ ] Fleet orchestration: push rules and feeds across many nodes
