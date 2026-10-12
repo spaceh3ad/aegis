@@ -9,7 +9,7 @@ use aegis_proxy::{
     metrics::Metrics,
 };
 use axum::{routing::any, Router};
-use tower_http::catch_panic::CatchPanicLayer;
+use tower_http::{catch_panic::CatchPanicLayer, cors::CorsLayer};
 use tracing::{error, info, warn};
 
 #[tokio::main]
@@ -117,6 +117,9 @@ async fn main() {
         .fallback(any(rpc_handler))
         .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
         .layer(CatchPanicLayer::new())
+        // RPC endpoints are called cross-origin by wallets and dapps; without CORS a
+        // browser-context request is rejected before it reaches the firewall.
+        .layer(CorsLayer::permissive())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&cfg.listen_addr)

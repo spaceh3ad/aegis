@@ -4,24 +4,28 @@ Everything a judge (or you, on stage) needs to reproduce the demo in under two m
 
 ## Which script do I run?
 
-There are four entry points. They share the same proxy binary; they differ in **what they
+There are five entry points. They share the same proxy binary; they differ in **what they
 prove** and **what they require**.
 
 | Script | Needs Docker? | Runs against | Proves | Best for |
 |---|---|---|---|---|
 | `demo/rehearse.sh` | no | any real Solana RPC | the full six-beat pitch, end-to-end, with a pass/fail gate | **the recording** — one take, everything |
+| `demo/wallet-demo.sh` | no | any real Solana/EVM RPC | a **real wallet** (Phantom/MetaMask) blocked at the edge | **the most convincing demo** — you click Send |
 | `demo/spam-demo.sh` | no | any real Solana RPC | a spam **burst** blocked at the proxy; legit traffic untouched | showing **volume reduction** (the spam story) |
 | `demo/rpc-demo.sh` | no | any real Solana RPC | basic block + live reads + latency histogram | a quick smoke test of the live path |
 | `demo/demo.sh` | yes (local stack) | the Compose validator | the same checks against a self-contained stack + Grafana counters | offline/self-contained walkthrough |
 
-None of them need an API key — they default to the public testnet. Set `HELIUS_API_KEY` or
-`AEGIS_RPC_URL` to point them at Helius / devnet / mainnet.
+None of them need an API key — they default to the public testnet/devnet. Set `HELIUS_API_KEY`
+or `AEGIS_RPC_URL` to point them at Helius / mainnet.
 
 ### `rehearse.sh` vs `spam-demo.sh` vs `rpc-demo.sh` vs `demo.sh`
 
 - **`rehearse.sh`** is the *story*: six beats (latency → live reads → static block → SIGHUP
   hot-reload → Solana Wasm rule → cross-chain rule hot-swap). It exits non-zero if any beat
   fails, so it is a safe pre-stage check.
+- **`wallet-demo.sh`** is the *proof*: it boots Aegis as the wallet's RPC endpoint and you send
+  a transaction from **Phantom or MetaMask**. Aegis rejects the blocklisted recipient at the
+  edge and the wallet shows the failure — no scripting, an actual click. See the next section.
 - **`spam-demo.sh`** is the *volume* argument: it fires a burst of high-compute/zero-fee
   transactions and shows **how many never left the box**, plus the compute the node was never
   asked to reserve. Spam is a volume problem; this is the one script that shows it as volume.
@@ -69,6 +73,76 @@ It runs all six beats against a real cluster and prints a pass/fail summary. Exi
 5. **Wasm rule (Solana)** — 500k-CU zero-fee spam dropped (`-32002`, `rule_id=zero-fee-spam`).
 6. **Cross-chain rule** — hot-swap to the EVM guard; `approve()` blocked (`approve-guard`), `transfer()` passes.
 
+---
+
+## Demo with a real wallet (Phantom / MetaMask)
+
+This is the most convincing demo, and it is **manual by nature** — you click Send, Aegis
+blocks it.
+
+**The architecture point.** A wallet broadcasts through the RPC configured for its network —
+not through the dApp's provider. So "Aegis in the middle" means **Aegis *is* the wallet's RPC
+endpoint**. You are not intercepting a click; you are replacing the node URL, exactly as you
+would put a WAF in front of a web origin. Both wallets support a custom RPC per network.
+
+```bash
+# Solana devnet / Phantom (build once):
+cargo build --release -p aegis-proxy
+BLOCK_ADDR=CVC5aBX8ckVF2ByAKRXjg9gPMqYNNCSBFkSRuGvxLbzv bash demo/wallet-demo.sh
+
+# Base Sepolia / MetaMask:
+CHAIN=base BLOCK_ADDR=0x000000000000000000000000000000000000dEaD bash demo/wallet-demo.sh
+
+# Wallets often require https:// — expose via a cloudflared quick tunnel:
+TUNNEL=1 BLOCK_ADDR=<addr> bash demo/wallet-demo.sh
+```
+
+The script prints the exact RPC URL and the address to send to, then watches `/metrics` live
+and logs each block as it happens.
+
+- **Phantom:** Settings → Developer Settings → enable testnet → set Solana Devnet RPC URL to
+  the printed URL.
+- **MetaMask:** Settings → Networks → *Base Sepolia* → Edit → RPC URL = the printed URL.
+
+Then send a tiny amount **to the printed blocklist address**: Aegis rejects it at the edge
+(`-32001`, `rule_id=blocklist:file`) and the wallet surfaces the failure; the transaction
+never reaches the chain. Send to any normal address and it passes through untouched.
+
+> **Two ways to insert Aegis:**
+> 1. **Wallet RPC** (above) — set the wallet's RPC to Aegis. Works for Phantom *and* MetaMask.
+> 2. **dApp-owned provider** — a page that creates its own connection to Aegis
+>    (`new Connection(aegis_url)` on Solana, `ethers` provider on EVM). Works cleanly for
+>    Solana; for EVM MetaMask still broadcasts through its *network* RPC, so you must also
+>    change the network RPC for that path to be enforced.
+>
+> Note MetaMask shows a *gas-estimation* error rather than the raw JSON-RPC text, because it
+> estimates gas via the same RPC before sending and Aegis refuses the request. The rejection
+> is still Aegis; watch the terminal log to see it fire.
+
+### localhost is fine — no tunnel needed
+
+Pointing Phantom at `http://127.0.0.1:8899` is the normal local-validator workflow and is the
+simplest way to record. Only reach for `TUNNEL=1` if a wallet refuses a non-`https://` URL.
+
+**Phantom for both chains:**
+
+- **Solana Devnet** — Settings → Developer Settings → enable testnet → set the Solana Devnet
+  RPC URL to `http://127.0.0.1:8899`. Send a transfer to the printed blocklist address.
+- **EVM (Base Sepolia)** — Phantom's EVM networks work the same way *if* your version lets you
+  edit the network's RPC URL; set it to `http://127.0.0.1:8899`. If Phantom won't let you
+  override an EVM RPC, use MetaMask for the EVM half (it accepts `http://localhost` custom
+  RPCs), or demo EVM via `demo/rehearse.sh` Beat 6.
+
+One run only fronts **one** upstream chain, so pick the network to match the script:
+
+```bash
+# Phantom → Solana Devnet
+BLOCK_ADDR=CVC5aBX8ckVF2ByAKRXjg9gPMqYNNCSBFkSRuGvxLbzv bash demo/wallet-demo.sh
+
+# Phantom → Base Sepolia (EVM)
+CHAIN=base BLOCK_ADDR=0x000000000000000000000000000000000000dEaD bash demo/wallet-demo.sh
+```
+
 > Note: Aegis rejections are identified by `error.data.rule_id` (present on its own
 > rejections, absent on downstream node errors). JSON-RPC codes alone can collide with the
 > chain — e.g. Solana itself returns `-32002` for a failed transaction simulation.
@@ -115,14 +189,31 @@ open http://localhost:3001         # Grafana dashboard
 > The Solana validator image is `linux/amd64`; on Apple silicon it runs under emulation,
 > so first start can take a few minutes. Path A avoids this entirely.
 
-## Path C — Docker against a real RPC
+## Path C — Docker against a real RPC (Grafana included)
+
+Aegis + Prometheus + Grafana in front of any external RPC — **no emulated validator**, so
+this works cleanly on Apple silicon.
 
 ```bash
 docker compose -f docker-compose.rpc.yml up --build
-# Helius:
+# Helius / devnet:
 AEGIS_RPC_URL="https://testnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" \
   docker compose -f docker-compose.rpc.yml up --build
 ```
+
+Ports: Aegis `:8899`, Prometheus `:9090`, **Grafana `:3001`** (`http://localhost:3001`).
+
+Drive the dashboard — run a burst so the counters move, then open Grafana:
+
+```bash
+SPAM=500 bash demo/spam-demo.sh          # 500 blocks show up in "Blocked, cumulative"
+open http://localhost:3001               # dashboard uid: aegis-svm-v1
+```
+
+> **Which paths have Grafana?** Only the two Docker stacks (Path B and Path C). The
+> no-Docker scripts (`rehearse.sh`, `spam-demo.sh`, `rpc-demo.sh`) run the bare binary: they
+> still *serve* `/metrics`, but nothing scrapes it and the proxy exits when the script ends —
+> so **no Grafana**. If you want the dashboard, use a Compose path.
 
 ---
 
@@ -133,13 +224,14 @@ AEGIS_RPC_URL="https://testnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" \
    the transaction. So operators carry traffic they don't want — spam, drainers, exploits,
    sanctioned counterparties."
 
-2. **Show the number (15s).** `cargo bench -p aegis-bench` — full pipeline **~700 ns** on
-   Solana (parse + policy), 50 000-entry list still **~18 ns** (O(1)). That is ~70 000×
-   under a 50 µs budget.
+2. **Show the number (15s).** Cite the committed figure: full pipeline **~700 ns** on Solana
+   (parse + policy), 50 000-entry list still **~18 ns** (O(1)). That is ~70 000× under a
+   50 µs budget. (Reproduce live with `BENCH=1 bash demo/rehearse.sh` on an idle machine.)
 
 3. **Show the live block (30s).** `bash demo/rpc-demo.sh` — a blocklisted signer is
    rejected at the proxy (`-32001`, `rule_id=blocklist:file`) while real cluster reads
-   pass through untouched.
+   pass through untouched. For the **volume** story, `bash demo/spam-demo.sh` shows N spam
+   txs blocked, 0 forwarded, and the compute the node never reserved.
 
 4. **Show operator-owned policy (20s).** Point at `blocklist.txt` (one base58/`0x` per
    line), `THREAT_FEEDS="seal=https://…"` (hot-reloaded feeds, attributed per source), and
