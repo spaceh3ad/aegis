@@ -2,6 +2,31 @@
 
 Everything a judge (or you, on stage) needs to reproduce the demo in under two minutes.
 
+## One-take rehearsal (recommended)
+
+```bash
+bash demo/rehearse.sh            # full run incl. live Criterion numbers
+SKIP_BENCH=1 bash demo/rehearse.sh   # skip the bench pass (faster)
+INTERACTIVE=1 bash demo/rehearse.sh  # pause between beats for narration
+HELIUS_API_KEY=xxx bash demo/rehearse.sh   # run against Helius instead of public testnet
+```
+
+It runs all six beats against a real cluster and prints a pass/fail summary. Exit code is
+0 only if every beat verified — safe to run right before you go on stage.
+
+### The six beats it presents
+
+1. **Latency** — live Criterion: full pipeline ~700 ns, 50k-entry list ~18 ns (O(1)).
+2. **Live reads** — real `getVersion` / `getHealth` / `getSlot` through the firewall.
+3. **Static list** — a blocklisted signer rejected at the proxy (`-32001`, `rule_id=blocklist:file`).
+4. **Hot reload** — the same tx flips allowed→blocked on `SIGHUP`, no restart, no dropped connections.
+5. **Wasm rule (Solana)** — 500k-CU zero-fee spam dropped (`-32002`, `rule_id=zero-fee-spam`).
+6. **Cross-chain rule** — hot-swap to the EVM guard; `approve()` blocked (`approve-guard`), `transfer()` passes.
+
+> Note: Aegis rejections are identified by `error.data.rule_id` (present on its own
+> rejections, absent on downstream node errors). JSON-RPC codes alone can collide with the
+> chain — e.g. Solana itself returns `-32002` for a failed transaction simulation.
+
 ## What Aegis is, in one line
 
 A sovereign, sub-microsecond **transaction firewall** that sits in front of a Solana (or
