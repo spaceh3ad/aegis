@@ -46,7 +46,12 @@ services:
       validator:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8899/metrics"]
+      # bash is present in the runtime image; /dev/tcp avoids needing curl.
+      test:
+        - CMD
+        - bash
+        - -c
+        - "exec 3<>/dev/tcp/127.0.0.1/8899; printf 'GET /metrics HTTP/1.0\\r\\n\\r\\n' >&3; grep -q aegis_blocklist_size <&3"
       interval: 5s
       timeout: 3s
       retries: 5
