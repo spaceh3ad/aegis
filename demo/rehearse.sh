@@ -10,10 +10,10 @@
 #   6. Cross-chain  — hot-swap the rule to an EVM guard; approve() blocked, transfer() passes
 #
 # Usage:
-#   bash demo/rehearse.sh                 # public testnet
+#   bash demo/rehearse.sh                 # public testnet; cites committed latency numbers
 #   HELIUS_API_KEY=xxx bash demo/rehearse.sh
 #   AEGIS_RPC_URL="https://devnet.helius-rpc.com/?api-key=$KEY" bash demo/rehearse.sh
-#   SKIP_BENCH=1 bash demo/rehearse.sh    # skip beat 1 (already have the numbers)
+#   BENCH=1 bash demo/rehearse.sh         # re-run Criterion live (opt-in; use an idle machine)
 #   INTERACTIVE=1 bash demo/rehearse.sh   # pause for narration between beats
 set -uo pipefail
 
@@ -134,11 +134,12 @@ echo -e "\n${B}${M}AEGIS${X} ${B}— a programmable, wire-speed transaction fire
 info "pid $PID  |  plugin: zero-fee-filter  |  list: $(len_list) entries"
 
 # ═══ BEAT 1 — Latency ═══════════════════════════════════════════════════════
-banner "BEAT 1 — Inspection latency (Criterion, real)"
-if [ "${SKIP_BENCH:-0}" = "1" ]; then
-    info "skipped (SKIP_BENCH=1). Known: parse ~690ns, list ~18ns/50k, pipeline ~730ns"
-else
-    info "running a short Criterion pass (full pipeline + 50k-entry list)..."
+banner "BEAT 1 — Inspection latency (committed Criterion numbers)"
+# Default: cite the numbers committed in README.md. A demo run must NOT re-benchmark:
+# a bench is slow (~30s), compiles the bench dep-tree, and is contention-sensitive — on a
+# busy box Criterion reports a spurious "regression". Opt in with BENCH=1 to reproduce live.
+if [ "${BENCH:-0}" = "1" ]; then
+    info "BENCH=1 — running a short Criterion pass (idle machine recommended)..."
     for name in "full_pipeline/allow" "blocklist_50k_entries/allow"; do
         out=$(cargo bench -p aegis-bench -- "$name" \
               --warm-up-time 0.5 --measurement-time 1 --sample-size 10 2>&1 | \
@@ -150,6 +151,10 @@ else
                 }')
         if [ -n "$out" ]; then ok "$(printf '%-28s' "$name") $out"; else info "$name (no sample captured)"; fi
     done
+else
+    info "full pipeline (parse + policy)   ~700 ns"
+    info "50,000-entry list lookup         ~18 ns   (same as 1 entry: O(1))"
+    info "source: README.md, measured on an idle Apple M2 Pro — re-run live with BENCH=1"
 fi
 info "O(1): a 50,000-entry list costs the same as one entry."
 pause

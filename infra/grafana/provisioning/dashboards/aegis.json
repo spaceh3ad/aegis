@@ -2,59 +2,75 @@
   "title": "Aegis",
   "uid": "aegis-svm-v1",
   "schemaVersion": 38,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
   "panels": [
     {
-      "id": 1,
-      "title": "Transactions/sec by verdict",
-      "type": "timeseries",
-      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "id": 10,
+      "title": "Blocked total",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "rate(aegis_transactions_total[30s])",
-          "legendFormat": "{{verdict}}"
+          "expr": "sum(aegis_transactions_blocked_total)",
+          "instant": true,
+          "legendFormat": "blocked"
         }
-      ]
+      ],
+      "options": { "colorMode": "background", "graphMode": "none" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        }
+      }
     },
     {
-      "id": 2,
-      "title": "Inspection latency p50/p95/p99 (µs)",
-      "type": "timeseries",
-      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "id": 11,
+      "title": "Allowed total",
+      "type": "stat",
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, rate(aegis_inspection_duration_microseconds_bucket[30s]))",
-          "legendFormat": "p50"
-        },
-        {
-          "expr": "histogram_quantile(0.95, rate(aegis_inspection_duration_microseconds_bucket[30s]))",
-          "legendFormat": "p95"
-        },
-        {
-          "expr": "histogram_quantile(0.99, rate(aegis_inspection_duration_microseconds_bucket[30s]))",
-          "legendFormat": "p99"
+          "expr": "sum(aegis_transactions_total{verdict=\"allow\"})",
+          "instant": true,
+          "legendFormat": "allowed"
         }
-      ]
+      ],
+      "options": { "colorMode": "value", "graphMode": "none" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        }
+      }
     },
     {
-      "id": 3,
+      "id": 12,
       "title": "Blocklist size",
       "type": "stat",
-      "gridPos": { "x": 0, "y": 8, "w": 6, "h": 4 },
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
       "targets": [
-        { "expr": "aegis_blocklist_size", "legendFormat": "entries" }
-      ]
+        { "expr": "aegis_blocklist_size", "instant": true, "legendFormat": "entries" }
+      ],
+      "options": { "colorMode": "value", "graphMode": "none" }
     },
     {
       "id": 4,
       "title": "Downstream up",
       "type": "stat",
-      "gridPos": { "x": 6, "y": 8, "w": 6, "h": 4 },
+      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
       "targets": [
-        { "expr": "aegis_downstream_up", "legendFormat": "" }
+        { "expr": "aegis_downstream_up", "instant": true, "legendFormat": "" }
       ],
-      "options": { "colorMode": "background" },
+      "options": { "colorMode": "background", "graphMode": "none" },
       "fieldConfig": {
         "defaults": {
           "thresholds": {
@@ -68,13 +84,57 @@
     },
     {
       "id": 5,
-      "title": "Blocked by rule",
+      "title": "Blocked, cumulative (by rule)",
       "type": "timeseries",
-      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 4 },
+      "description": "Cumulative counter. Grows by one on every block and never decays, so a single event is visible here (unlike rate()).",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
       "targets": [
         {
-          "expr": "rate(aegis_transactions_blocked_total[30s])",
+          "expr": "sum by (rule_id) (aegis_transactions_blocked_total)",
           "legendFormat": "{{rule_id}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 1,
+      "title": "Transactions, cumulative (by verdict)",
+      "type": "timeseries",
+      "description": "Cumulative counters. Use these for a demo; rate() shows 0 once traffic stops.",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "sum by (verdict) (aegis_transactions_total)",
+          "legendFormat": "{{verdict}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Inspection latency percentiles (µs)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 12, "w": 24, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(aegis_inspection_duration_microseconds_bucket[$__rate_interval])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(aegis_inspection_duration_microseconds_bucket[$__rate_interval])))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(aegis_inspection_duration_microseconds_bucket[$__rate_interval])))",
+          "legendFormat": "p99"
         }
       ]
     }

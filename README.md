@@ -17,6 +17,16 @@ RPC operators have to handle submitted transactions they don't want to carry: sp
 | HTTP-level WAFs | < 1 ms | See headers and IPs, not transaction internals |
 | On-chain blacklists | 0 ms | Rent/gas cost, compute overhead, protocol-level |
 
+### Threat coverage — what Aegis does and does not address
+
+| Threat | Covered? | How / why not |
+|---|---|---|
+| **Network-level bot spam / congestion** | **Partially** | Rejects junk submissions at the RPC edge before the node ingests or forwards them — e.g. high-compute, zero-fee spam — in O(1) time that holds under burst. One operator's node stops carrying what it didn't accept; benefit compounds with adoption. Aegis sits in front of an **RPC node**, not the validator's TPU/QUIC ingestion, so it does not by itself police the global leader path. |
+| **Exploit / drainer / sanctioned traffic** | **Yes** | Static address lists and operator-selected feeds are screened per transaction (signers, accounts, program/call targets), with source-attributed, auditable rejections. |
+| **Wallet display spam (dusting, fake transfers, address poisoning)** | **No** | This is an **inbound, client-layer** problem: dust tokens airdropped *to* a user and lookalike entries in wallet history. Aegis screens outbound **transaction submission** (`sendTransaction`, `eth_sendRawTransaction`) and never sees a user's token list or history. Wallets and explorers own that layer. The only adjacency: if a poisoned destination is itself on an operator list, the outbound transfer is blocked before funds move. |
+
+Naming the boundary is deliberate: it is the difference between a firewall and a claim.
+
 ## Design principles
 
 - **Sovereign sidecar, not a cloud chokepoint.** Aegis runs on the operator's own hardware. No traffic is routed through us, and there is no central switch.
@@ -140,6 +150,19 @@ AEGIS_RPC_URL="https://testnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" \
 AEGIS_PROXY_URL=http://127.0.0.1:8899 bash demo/demo.sh
 ```
 
+### Demo scripts (no Docker needed for these)
+
+All default to the public testnet; set `HELIUS_API_KEY` or `AEGIS_RPC_URL` for Helius/devnet/mainnet.
+
+| Script | Shows |
+|---|---|
+| `bash demo/rehearse.sh` | the full six-beat pitch, with a pass/fail gate (best for recording) |
+| `bash demo/spam-demo.sh` | a spam **burst** blocked at the proxy — volume reduction + compute never reserved |
+| `bash demo/rpc-demo.sh` | a quick live smoke test (reads, one block, latency histogram) |
+| `bash demo/demo.sh` | the same checks against the Docker Compose stack, incl. Grafana counters |
+
+See [DEMO.md](DEMO.md) for what each proves and the stage script.
+
 ### Docker Compose — full local stack (self-contained, offline)
 
 ```bash
@@ -240,13 +263,17 @@ The bundled `plugins/zero-fee-filter.wasm` blocks Solana transactions that reque
 crates/
   aegis-core/   parsers (Solana, EVM), address lists, Wasm engine
   aegis-proxy/  axum server, config, feeds, metrics, request pipeline
-  aegis-bench/  Criterion benchmarks
+  aegis-bench/  Criterion benchmarks (dev-only)
 plugins/
   zero-fee-filter/       sample Wasm rule (Rust guest, Solana)
   approve-guard/         sample Wasm rule (Rust guest, EVM approvals)
   *.wasm                 pre-built plugins
 infra/                   Prometheus + Grafana provisioning
-demo/demo.sh
+demo/
+  rehearse.sh            six-beat pitch (recommended)
+  spam-demo.sh           spam burst → volume reduction
+  rpc-demo.sh            live smoke test
+  demo.sh                checks against the Compose stack
 ```
 
 ## Known limitations

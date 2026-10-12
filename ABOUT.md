@@ -144,26 +144,27 @@ rules:
 
 ## 6. Colosseum Frontier Hackathon Strategy
 
-**Track:** Infrastructure & Developer Tooling
+**Track:** Solana (this edition's tracks are ecosystems; State of the Art / Public Good as secondary angles)
 
-**Core Pitch:** "Web3 security platforms add 150ms REST API lag; standard Solana RPCs blindly forward illicit flows and spam. Aegis-SVM provides an open-core, sub-50µs programmable reverse proxy that secures transactions at wire speed before they touch the node."
+**Core Pitch:** "Web3 security platforms add 80–250 ms REST API lag; standard Solana RPCs blindly forward illicit flows and spam. Aegis provides an open-core, sub-microsecond programmable reverse proxy that secures transactions at wire speed before they touch the node."
 
 ### Live Demo & Judging Flow
 
-**Live Performance Benchmarking Terminal (`cargo bench`):**
-- Feed a continuous 50,000 TPS synthetic transaction replay stream into Aegis.
-- Render real-time latency statistics: parsing + static evaluation completes in < 25µs average overhead.
-- Output a memory flamegraph demonstrating near-zero allocations on the hot path.
+**Latency — committed, reproducible numbers:**
+- Full pipeline (parse + policy) **~700 ns** on Solana, **~26 µs** on EVM, from Criterion.
+- **O(1)** address screening: a 50,000-entry list costs the same as one entry (~18 ns).
+- Reproduce with `cargo bench -p aegis-bench` on an idle machine. Criterion is a
+  **dev-only** dependency of `aegis-bench`; it is never compiled into the server or the image.
 
 **The "Three-Way Attack" Test:**
-1. **Tx 1 (Standard Swap):** Sent to proxy → Passed → Executed on local test validator in < 1ms.
-2. **Tx 2 (Sanctioned Wallet Interaction):** Sent to proxy → Intercepted in 12µs → Returns structured JSON-RPC error. Zero impact on validator compute.
-3. **Tx 3 (Zero-Fee CU Exhaustion Attack):** Sent to proxy → Dropped immediately according to custom YAML policy.
+1. **Tx 1 (Standard Swap):** Sent to proxy → Passed → forwarded to the node.
+2. **Tx 2 (Sanctioned Wallet Interaction):** Sent to proxy → intercepted, structured JSON-RPC error, zero impact on node compute.
+3. **Tx 3 (Zero-Fee CU Exhaustion Attack):** Sent to proxy → blocked by the operator's policy (shipped Wasm rule; policy is authored in Rust and compiled to Wasm).
 
-**Turnkey Deployment** — 1-command Docker configuration running Aegis-SVM alongside a local Agave validator:
+**Turnkey Deployment** — 1-command Docker configuration running Aegis alongside a local Agave validator:
 
 ```bash
-docker compose up aegis-validator-ingress
+docker compose up --build
 ```
 
 ---
@@ -180,12 +181,12 @@ docker compose up aegis-validator-ingress
 
 **Community Edition (Open Source):**
 - Core Rust proxy binary
-- Zero-copy parser
-- Local YAML/Lua rule evaluation
-- Standard rate limiting
+- Zero-copy Solana/EVM parsers
+- Local address lists + operator-selected threat feeds
+- Sandboxed Wasm rule engine (author rules in Rust, hot-swap live)
 
 **Enterprise Edition (Commercial License):**
-- Auto-updating threat intelligence feeds (direct integrations with Chainalysis, TRM, Elliptic)
+- Curated, auto-updating threat-intelligence feeds and managed integrations
 - High-availability clustering and distributed rate limiting across regional nodes
 - Compliance audit dashboard with cryptographically signed JSON-RPC rejection receipts
 

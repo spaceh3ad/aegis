@@ -2,21 +2,67 @@
 
 Everything a judge (or you, on stage) needs to reproduce the demo in under two minutes.
 
-## One-take rehearsal (recommended)
+## Which script do I run?
+
+There are four entry points. They share the same proxy binary; they differ in **what they
+prove** and **what they require**.
+
+| Script | Needs Docker? | Runs against | Proves | Best for |
+|---|---|---|---|---|
+| `demo/rehearse.sh` | no | any real Solana RPC | the full six-beat pitch, end-to-end, with a pass/fail gate | **the recording** — one take, everything |
+| `demo/spam-demo.sh` | no | any real Solana RPC | a spam **burst** blocked at the proxy; legit traffic untouched | showing **volume reduction** (the spam story) |
+| `demo/rpc-demo.sh` | no | any real Solana RPC | basic block + live reads + latency histogram | a quick smoke test of the live path |
+| `demo/demo.sh` | yes (local stack) | the Compose validator | the same checks against a self-contained stack + Grafana counters | offline/self-contained walkthrough |
+
+None of them need an API key — they default to the public testnet. Set `HELIUS_API_KEY` or
+`AEGIS_RPC_URL` to point them at Helius / devnet / mainnet.
+
+### `rehearse.sh` vs `spam-demo.sh` vs `rpc-demo.sh` vs `demo.sh`
+
+- **`rehearse.sh`** is the *story*: six beats (latency → live reads → static block → SIGHUP
+  hot-reload → Solana Wasm rule → cross-chain rule hot-swap). It exits non-zero if any beat
+  fails, so it is a safe pre-stage check.
+- **`spam-demo.sh`** is the *volume* argument: it fires a burst of high-compute/zero-fee
+  transactions and shows **how many never left the box**, plus the compute the node was never
+  asked to reserve. Spam is a volume problem; this is the one script that shows it as volume.
+- **`rpc-demo.sh`** is the *smoke test*: a handful of reads, one block, one latency readout.
+  Fastest way to confirm the live path works.
+- **`demo.sh`** is the *offline* variant: it targets the Docker Compose stack (Aegis + a local
+  validator + Prometheus + Grafana), so it also drives the dashboard counters. The other three
+  do not touch Docker.
+
+All four build the release binary automatically if it is missing.
+
+---
+
+## Recommended path (no Docker, 60 seconds)
 
 ```bash
-bash demo/rehearse.sh            # full run incl. live Criterion numbers
-SKIP_BENCH=1 bash demo/rehearse.sh   # skip the bench pass (faster)
+cargo build --release -p aegis-proxy     # once
+bash demo/rehearse.sh                    # the full pitch, six beats
+```
+
+## One-take rehearsal (stage recording)
+
+```bash
+bash demo/rehearse.sh            # full six-beat run; cites committed latency numbers
+BENCH=1 bash demo/rehearse.sh    # also re-run Criterion live (opt-in; idle machine)
 INTERACTIVE=1 bash demo/rehearse.sh  # pause between beats for narration
 HELIUS_API_KEY=xxx bash demo/rehearse.sh   # run against Helius instead of public testnet
 ```
+
+> **Criterion is a dev-only tool.** It lives in `[dev-dependencies]` of `aegis-bench` and is
+> never compiled into `aegis-proxy` or the Docker image (verify: `cargo tree -p aegis-proxy`).
+> The demo cites the committed numbers by default; live re-benchmarking is opt-in with
+> `BENCH=1` because a bench is slow and contention-sensitive (on a loaded box Criterion prints
+> a spurious "regression").
 
 It runs all six beats against a real cluster and prints a pass/fail summary. Exit code is
 0 only if every beat verified — safe to run right before you go on stage.
 
 ### The six beats it presents
 
-1. **Latency** — live Criterion: full pipeline ~700 ns, 50k-entry list ~18 ns (O(1)).
+1. **Latency** — committed Criterion numbers: full pipeline ~700 ns, 50k-entry list ~18 ns (O(1)). Re-run live with `BENCH=1`.
 2. **Live reads** — real `getVersion` / `getHealth` / `getSlot` through the firewall.
 3. **Static list** — a blocklisted signer rejected at the proxy (`-32001`, `rule_id=blocklist:file`).
 4. **Hot reload** — the same tx flips allowed→blocked on `SIGHUP`, no restart, no dropped connections.
