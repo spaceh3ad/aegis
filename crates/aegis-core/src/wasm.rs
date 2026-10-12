@@ -146,6 +146,11 @@ mod tests {
             .join("../../plugins/zero-fee-filter/target/wasm32-wasip1/release/zero_fee_filter.wasm")
     }
 
+    fn approve_plugin_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../plugins/approve-guard/target/wasm32-wasip1/release/approve_guard.wasm")
+    }
+
     fn svm_tx(cu_limit: Option<u32>, cu_price: Option<u64>) -> InspectedTx {
         InspectedTx {
             signers: vec![[0u8; 32]],
@@ -229,5 +234,60 @@ mod tests {
             engine.evaluate(&evm).is_none(),
             "rule is scoped to svm; high EVM gas limit is normal"
         );
+    }
+
+    #[test]
+    fn test_wasm_engine_approve_guard() {
+        let path = approve_plugin_path();
+        if !path.exists() {
+            eprintln!("SKIP: approve-guard.wasm not built, run `cargo build --release --target wasm32-wasip1` in plugins/approve-guard first");
+            return;
+        }
+
+        let engine = WasmEngine::load(&path).expect("load plugin");
+
+        let evm_tx = |selector: Option<[u8; 4]>| EvmTx {
+            chain_id: Some(1),
+            from: [0xaa; 20],
+            to: Some([0xbb; 20]),
+            selector,
+            gas_limit: 60_000,
+            priority_fee: 1,
+            value_wei: "0".into(),
+            tx_type: 2,
+        };
+
+        // approve(address,uint256) -> blocked.
+        let approve = RuleInput::from(&evm_tx(Some([0x09, 0x5e, 0xa7, 0xb3])));
+        assert!(
+            matches!(
+                engine.evaluate(&approve),
+                Some(Verdict::Block {
+                    code: WASM_RULE_CODE,
+                    ..
+                })
+            ),
+            "ERC-20 approve() must be blocked on evm"
+        );
+
+        // increaseAllowance(address,uint256) -> blocked.
+        let increase = RuleInput::from(&evm_tx(Some([0x39, 0x50, 0x93, 0x51])));
+        assert!(
+            engine.evaluate(&increase).is_some(),
+            "increaseAllowance() must be blocked on evm"
+        );
+
+        // transfer(address,uint256) -> allowed.
+        let transfer = RuleInput::from(&evm_tx(Some([0xa9, 0x05, 0x9c, 0xbb])));
+        assert!(
+            engine.evaluate(&transfer).is_none(),
+            "a non-approval selector must pass"
+        );
+
+        // Same selector on Solana (no selector) -> allowed; rule is scoped to evm.
+        let mut svm = approve.clone();
+        svm.chain = "svm";
+        svm.selector = None;
+        assert!(engine.evaluate(&svm).is_none(), "rule is scoped to evm");
     }
 }

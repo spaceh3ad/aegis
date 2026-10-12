@@ -179,23 +179,32 @@ Rules are ordinary Rust (or any Extism-supported language) compiled to `wasm32-w
 
 The rule returns `{"verdict": "allow" | "block" | "drop", "rule_id": "...", "message": "..."}`.
 
+### Two worked examples ship in `plugins/`
+
+| Plugin | Chain | Blocks | `rule_id` |
+|---|---|---|---|
+| `zero-fee-filter` | Solana | transactions requesting >400k CU with zero priority fee (spam) | `zero-fee-spam` |
+| `approve-guard` | EVM | ERC-20 `approve` / `increaseAllowance` calls (drainer entry point) | `approve-guard` |
+
+Build either one and point Aegis at it:
+
+```bash
+cd plugins/approve-guard
+cargo build --release --target wasm32-wasip1
+WASM_PLUGIN_PATH=target/wasm32-wasip1/release/approve_guard.wasm \
+  ./target/release/aegis-proxy   # run from the repo root
+```
+
+The engine is generic — write a new rule by copying either plugin directory. The source
+for `approve-guard` is 40 lines:
+
 ```rust
-use extism_pdk::*;
-use serde::{Deserialize, Serialize};
-
-#[derive(Deserialize)]
-struct Input { chain: String, #[serde(default)] selector: Option<String> }
-
-#[derive(Serialize)]
-struct Output { verdict: &'static str, rule_id: &'static str, message: &'static str }
-
-// Example: refuse unlimited ERC-20 approvals on EVM.
 #[plugin_fn]
 pub fn evaluate(input: Json<Input>) -> FnResult<Json<Output>> {
-    let input = input.0;
-    let block = input.chain == "evm" && input.selector.as_deref() == Some("0x095ea7b3");
-    Ok(Json(if block {
-        Output { verdict: "block", rule_id: "approve-guard", message: "approve() blocked by policy" }
+    let blocked = input.0.chain == "evm"
+        && input.0.selector.as_deref() == Some("0x095ea7b3"); // approve(address,uint256)
+    Ok(Json(if blocked {
+        Output { verdict: "block", rule_id: "approve-guard", message: "ERC-20 approval call blocked by policy" }
     } else {
         Output { verdict: "allow", rule_id: "", message: "" }
     }))

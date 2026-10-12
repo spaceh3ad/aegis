@@ -41,10 +41,15 @@ jobs:
         working-directory: plugins/zero-fee-filter
         run: cargo build --release --target wasm32-wasip1
 
-      - name: Run Wasm engine integration test
+      - name: Build approve-guard Wasm plugin
+        working-directory: plugins/approve-guard
+        run: cargo build --release --target wasm32-wasip1
+
+      - name: Run Wasm engine integration tests
         run: |
           cp plugins/zero-fee-filter/target/wasm32-wasip1/release/zero_fee_filter.wasm plugins/zero-fee-filter.wasm
-          cargo test -p aegis-core test_wasm_engine_zero_fee_block -- --nocapture
+          cp plugins/approve-guard/target/wasm32-wasip1/release/approve_guard.wasm plugins/approve-guard.wasm
+          cargo test -p aegis-core --lib wasm::tests -- --nocapture
 
   bench-smoke:
     name: Benchmark smoke

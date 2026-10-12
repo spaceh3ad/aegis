@@ -1,6 +1,8 @@
 /target/
 /plugins/zero-fee-filter/target/
+/plugins/approve-guard/target/
 *.wasm
 !plugins/zero-fee-filter.wasm
+!plugins/approve-guard.wasm
 .env
 *.log
