@@ -4,7 +4,7 @@ use aegis_core::{AddressSets, Blocklist, WasmEngine};
 use aegis_proxy::{
     config::FeedSpec,
     feeds::SourceRegistry,
-    handler::{metrics_handler, rpc_handler, AppState},
+    handler::{metrics_handler, rpc_handler, AppState, MAX_BATCH_LEN, MAX_BODY_BYTES},
     lut::LutResolver,
     metrics::Metrics,
 };
@@ -354,6 +354,35 @@ async fn test_batch_fully_blocked_never_touches_downstream() {
     assert_eq!(resp.status(), 200);
     let json: Value = resp.json().await.unwrap();
     assert_eq!(json.as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn test_oversized_batch_is_rejected() {
+    let tmp = write_blocklist(&[]);
+    let proxy_url = start_proxy(tmp.path().to_path_buf(), DEAD_DOWNSTREAM.into()).await;
+
+    let entries: Vec<Value> = (0..=MAX_BATCH_LEN as u64)
+        .map(|id| json!({"jsonrpc":"2.0","id":id,"method":"getSlot","params":[]}))
+        .collect();
+    let resp = post(&proxy_url, Value::Array(entries).to_string()).await;
+    assert_eq!(
+        resp.status(),
+        413,
+        "a batch over the cap must be refused before any work"
+    );
+}
+
+#[tokio::test]
+async fn test_oversized_body_is_rejected() {
+    let tmp = write_blocklist(&[]);
+    let proxy_url = start_proxy(tmp.path().to_path_buf(), DEAD_DOWNSTREAM.into()).await;
+
+    let huge = format!(
+        r#"{{"jsonrpc":"2.0","id":1,"method":"echo","params":["{}"]}}"#,
+        "a".repeat(MAX_BODY_BYTES + 1)
+    );
+    let resp = post(&proxy_url, huge).await;
+    assert_eq!(resp.status(), 413, "a body over the cap must be refused");
 }
 
 #[tokio::test]

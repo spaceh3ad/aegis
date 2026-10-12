@@ -1,12 +1,17 @@
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
-use extism::{Manifest, Plugin, Wasm};
+use extism::{Manifest, Plugin, PluginBuilder, Wasm};
 use serde::{Deserialize, Serialize};
 
 use crate::types::{EvmTx, InspectedTx, Verdict};
 
 pub const WASM_RULE_CODE: i32 = -32002;
+
+/// Per-call instruction budget for a Wasm rule. Extism refuels to this value before every
+/// invocation, so a runaway or malicious plugin is stopped without wedging the engine.
+/// Generous enough for any realistic policy check (~1 ms of rule work).
+pub const WASM_FUEL_LIMIT: u64 = 500_000_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum WasmEngineError {
@@ -98,22 +103,34 @@ impl WasmEngine {
 
     pub fn reload(&self, path: &Path) -> Result<(), WasmEngineError> {
         let new_plugin = Self::make_plugin(path)?;
-        *self.plugin.lock().expect("wasm plugin lock poisoned") = new_plugin;
+        *self.lock() = new_plugin;
         Ok(())
     }
 
     fn make_plugin(path: &Path) -> Result<Plugin, extism::Error> {
         let wasm = Wasm::file(path);
         let manifest = Manifest::new([wasm]);
-        Plugin::new(&manifest, [], true)
+        // `with_wasi(true)` matches the previous `Plugin::new(&manifest, [], true)`.
+        // The fuel limit bounds a single rule invocation; Extism refuels per call.
+        PluginBuilder::new(manifest)
+            .with_wasi(true)
+            .with_fuel_limit(WASM_FUEL_LIMIT)
+            .build()
     }
 
-    /// Fails open: a plugin error or unparseable output yields `None` (no opinion).
+    /// Recovers a poisoned lock instead of panicking: a rule that panicked mid-call must not
+    /// take the whole firewall down. The plugin is still usable after recovery.
+    fn lock(&self) -> MutexGuard<'_, Plugin> {
+        self.plugin.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Fails open: a plugin error (including running out of fuel) or unparseable output
+    /// yields `None` (no opinion).
     pub fn evaluate(&self, input: &RuleInput) -> Option<Verdict> {
         let input_json = serde_json::to_vec(input).ok()?;
 
         let output_bytes: Vec<u8> = {
-            let mut plugin = self.plugin.lock().expect("wasm plugin lock poisoned");
+            let mut plugin = self.lock();
             plugin
                 .call::<&[u8], &[u8]>("evaluate", &input_json)
                 .ok()?

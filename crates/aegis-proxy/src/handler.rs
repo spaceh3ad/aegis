@@ -23,6 +23,11 @@ use crate::{
 
 static TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
+/// Largest JSON-RPC body accepted from a client, and the largest batch array we will screen.
+/// Real RPC traffic is small; the caps stop one request from forcing unbounded work/memory.
+pub const MAX_BODY_BYTES: usize = 1024 * 1024;
+pub const MAX_BATCH_LEN: usize = 100;
+
 fn next_trace_id() -> String {
     format!("{:#010x}", TRACE_COUNTER.fetch_add(1, Ordering::Relaxed))
 }
@@ -43,6 +48,9 @@ pub async fn rpc_handler(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    if body.len() > MAX_BODY_BYTES {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
     match serde_json::from_slice::<Value>(&body) {
         Ok(Value::Array(batch)) => handle_batch(&state, &headers, body, batch).await,
         Ok(req) => match screen(&state, &req).await {
@@ -167,6 +175,9 @@ async fn handle_batch(
     body: Bytes,
     batch: Vec<Value>,
 ) -> Response {
+    if batch.len() > MAX_BATCH_LEN {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    }
     let total = batch.len();
     let mut answered = Vec::new();
     let mut passthrough = Vec::with_capacity(total);

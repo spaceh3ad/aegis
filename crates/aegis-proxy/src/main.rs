@@ -4,11 +4,12 @@ use aegis_core::{AddressSets, Blocklist, WasmEngine};
 use aegis_proxy::{
     config::Config,
     feeds::SourceRegistry,
-    handler::{metrics_handler, rpc_handler, AppState},
+    handler::{metrics_handler, rpc_handler, AppState, MAX_BODY_BYTES},
     lut::LutResolver,
     metrics::Metrics,
 };
 use axum::{routing::any, Router};
+use tower_http::catch_panic::CatchPanicLayer;
 use tracing::{error, info, warn};
 
 #[tokio::main]
@@ -114,6 +115,8 @@ async fn main() {
     let app = Router::new()
         .route("/metrics", axum::routing::get(metrics_handler))
         .fallback(any(rpc_handler))
+        .layer(axum::extract::DefaultBodyLimit::max(MAX_BODY_BYTES))
+        .layer(CatchPanicLayer::new())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&cfg.listen_addr)

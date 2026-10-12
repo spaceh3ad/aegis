@@ -36,7 +36,12 @@ Layer 1  Static address lists         local file, Solana + EVM in one format   O
 
 ## Benchmarks
 
-Apple M-series (aarch64). Reproduce with `cargo bench -p aegis-bench`.
+Measured on an idle **Apple M2 Pro (arm64), macOS, single core**, Rust stable, via
+`cargo bench -p aegis-bench`.
+
+> Absolute numbers are **hardware-dependent** — read them as orders of magnitude, not
+> guarantees. Benchmark on an idle machine: Criterion compares against the previous run, so
+> a busy box reports a "regression" even when nothing in the code changed.
 
 | Stage | p50 |
 |---|---|
@@ -48,7 +53,16 @@ Apple M-series (aarch64). Reproduce with `cargo bench -p aegis-bench`.
 | **EVM: full pipeline** | **26 µs** |
 | Wasm rule engine (either chain) | ~1 ms |
 
-Lookup is O(1): a 50 000-entry list costs the same as a 1-entry one. EVM cost is dominated by recovering the sender from the signature, which is unavoidable when screening senders.
+The claims that matter here are **hardware-independent**, which is why they are the ones to hold onto:
+
+- **O(1) lookup.** A 50 000-entry list costs the same as a 1-entry one (~1.1× on this machine).
+  That is an algorithmic property — it holds on a Raspberry Pi.
+- **Inside the hot path.** The full Solana pipeline is **sub-µs** on this class of CPU, versus
+  **80–250 ms** for a hosted threat-intel REST call — 5–6 orders of magnitude, because one is a
+  CPU cost and the other is a network round-trip. That gap holds everywhere.
+- **Where the time goes.** Solana inspection is ~97% decode, ~3% policy. EVM cost is dominated by
+  secp256k1 sender recovery, which is unavoidable when screening senders.
+- **Throughput per core** (derived): roughly **1.4M Solana txs/s**, **~38k EVM txs/s**.
 
 ---
 
@@ -228,11 +242,30 @@ crates/
   aegis-proxy/  axum server, config, feeds, metrics, request pipeline
   aegis-bench/  Criterion benchmarks
 plugins/
-  zero-fee-filter/       sample Wasm rule (Rust guest)
-  zero-fee-filter.wasm   pre-built plugin
+  zero-fee-filter/       sample Wasm rule (Rust guest, Solana)
+  approve-guard/         sample Wasm rule (Rust guest, EVM approvals)
+  *.wasm                 pre-built plugins
 infra/                   Prometheus + Grafana provisioning
 demo/demo.sh
 ```
+
+## Known limitations
+
+These are deliberate, documented tradeoffs — not oversights. Read them before deploying.
+
+- **Fail-open on parse errors.** An undecodable `sendTransaction` is forwarded rather than blocked:
+  the downstream node rejects it with the same decoder, and blocking on our decoder's opinion would
+  turn a parser-version drift (e.g. a new vote/message variant) into an outage. The risk is that a
+  transaction our decoder cannot understand *also* cannot be screened. A parse-failure counter/alert
+  is exposed for operators; a strict `block-on-parse-error` mode is on the roadmap.
+- **EVM screening covers the sender and the call target, not calldata recipients.** An address that is
+  only referenced inside calldata (e.g. `transfer(sanctioned, …)`) is not matched by the static list.
+  Solana has no equivalent gap: every referenced account key, including LUT-loaded ones, is checked.
+- **LUT resolution adds an outbound `getAccountInfo` on a cache miss**, inside the request path
+  (2 s timeout). A burst of unique lookup tables can force many fetches; the cache evicts wholesale at
+  10 000 tables rather than LRU. The benchmark figures above measure the static path only.
+- **A Wasm rule runs under a per-call fuel budget** (`WASM_FUEL_LIMIT`), so a runaway rule is stopped,
+  but rule evaluation is ~1 ms and is *not* part of the sub-µs static SLA.
 
 ## Tests
 
@@ -242,10 +275,21 @@ cargo test --workspace
 
 Unit, integration, and property-based tests (proptest). The property tests fuzz both parsers, the list format, and the feed config with arbitrary input, and check invariants: a transaction is blocked iff it touches a listed address, merged feeds form an attributed union, and base58 and base64 decodes agree.
 
+The server is hardened against request-level abuse: a body-size cap (1 MiB), a batch-length cap (100),
+panic isolation via `CatchPanicLayer`, and a per-call fuel budget on Wasm rules. All four are covered
+by tests.
+
 ## Roadmap
 
+- [ ] Strict `block-on-parse-error` mode (see Known limitations)
+- [ ] Calldata-aware EVM screening (screen addresses embedded in calldata, not just sender/target)
+- [ ] LRU eviction + negative caching for the LUT resolver
 - [ ] Address Lookup Table expansion (Geyser/Yellowstone sync) so v0 LUT-resolved accounts are screened
 - [ ] Method-level rate limiting and `getProgramAccounts` cost guards
 - [ ] Staked connection pass-through (SWQoS / Jito forwarding)
 - [ ] Signed rejection receipts for audit trails
 - [ ] Fleet orchestration: push rules and feeds across many nodes
+
+## License
+
+MIT — see [LICENSE](LICENSE).
