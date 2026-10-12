@@ -73,9 +73,9 @@ impl From<&EvmTx> for RuleInput {
 
 #[derive(Deserialize)]
 struct PluginOutput {
-    verdict:  String,
-    rule_id:  Option<String>,
-    message:  Option<String>,
+    verdict: String,
+    rule_id: Option<String>,
+    message: Option<String>,
 }
 
 /// Hot-reloadable Extism plugin wrapper.
@@ -114,7 +114,10 @@ impl WasmEngine {
 
         let output_bytes: Vec<u8> = {
             let mut plugin = self.plugin.lock().expect("wasm plugin lock poisoned");
-            plugin.call::<&[u8], &[u8]>("evaluate", &input_json).ok()?.to_vec()
+            plugin
+                .call::<&[u8], &[u8]>("evaluate", &input_json)
+                .ok()?
+                .to_vec()
         };
 
         let output: PluginOutput = serde_json::from_slice(&output_bytes).ok()?;
@@ -123,7 +126,9 @@ impl WasmEngine {
             "block" => Some(Verdict::Block {
                 rule_id: output.rule_id.unwrap_or_else(|| "wasm-rule".into()),
                 code: WASM_RULE_CODE,
-                message: output.message.unwrap_or_else(|| "Blocked by Wasm rule".into()),
+                message: output
+                    .message
+                    .unwrap_or_else(|| "Blocked by Wasm rule".into()),
             }),
             "drop" => Some(Verdict::Drop),
             _ => None,
@@ -159,7 +164,10 @@ mod tests {
         assert_eq!(input.priority_fee, 7);
         assert_eq!(input.signers, vec!["11111111111111111111111111111111"]);
         let json = serde_json::to_value(&input).unwrap();
-        assert!(json.get("chain_id").is_none(), "EVM-only fields omitted for svm");
+        assert!(
+            json.get("chain_id").is_none(),
+            "EVM-only fields omitted for svm"
+        );
     }
 
     #[test]
@@ -179,7 +187,11 @@ mod tests {
         assert_eq!(input.signers, vec![format!("0x{}", "aa".repeat(20))]);
         assert_eq!(input.programs, vec![format!("0x{}", "bb".repeat(20))]);
         assert_eq!(input.selector.as_deref(), Some("0x095ea7b3"));
-        assert_eq!(input.priority_fee, u64::MAX, "saturates instead of wrapping");
+        assert_eq!(
+            input.priority_fee,
+            u64::MAX,
+            "saturates instead of wrapping"
+        );
         assert_eq!(input.chain_id, Some(42161));
     }
 
@@ -195,15 +207,27 @@ mod tests {
 
         let spam = RuleInput::from(&svm_tx(Some(500_000), None));
         assert!(
-            matches!(engine.evaluate(&spam), Some(Verdict::Block { code: WASM_RULE_CODE, .. })),
+            matches!(
+                engine.evaluate(&spam),
+                Some(Verdict::Block {
+                    code: WASM_RULE_CODE,
+                    ..
+                })
+            ),
             "500k CU with 0 priority fee should be blocked"
         );
 
         let paid = RuleInput::from(&svm_tx(Some(500_000), Some(1_000)));
-        assert!(engine.evaluate(&paid).is_none(), "500k CU with priority fee should pass");
+        assert!(
+            engine.evaluate(&paid).is_none(),
+            "500k CU with priority fee should pass"
+        );
 
         let mut evm = spam.clone();
         evm.chain = "evm";
-        assert!(engine.evaluate(&evm).is_none(), "rule is scoped to svm; high EVM gas limit is normal");
+        assert!(
+            engine.evaluate(&evm).is_none(),
+            "rule is scoped to svm; high EVM gas limit is normal"
+        );
     }
 }

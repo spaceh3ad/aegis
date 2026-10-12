@@ -31,7 +31,9 @@ pub fn parse_evm_transaction(raw_hex: &str) -> Result<EvmTx, EvmParseError> {
     }
     let bytes = hex::decode(hex_body)?;
     let envelope = TxEnvelope::decode_2718_exact(&bytes)?;
-    let from = envelope.recover_signer().map_err(|_| EvmParseError::Recovery)?;
+    let from = envelope
+        .recover_signer()
+        .map_err(|_| EvmParseError::Recovery)?;
 
     let input = envelope.input();
     let selector = (input.len() >= 4).then(|| input[..4].try_into().unwrap());
@@ -58,10 +60,17 @@ mod tests {
     use alloy_signer_local::PrivateKeySigner;
 
     fn signer() -> PrivateKeySigner {
-        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7".parse().unwrap()
+        "dcf2cbdd171a21c480aa7f53d77f31bb102282b3ff099c78e3118b37348c72f7"
+            .parse()
+            .unwrap()
     }
 
-    pub(crate) fn raw_1559(signer: &PrivateKeySigner, to: Address, input: Vec<u8>, tip: u128) -> String {
+    pub(crate) fn raw_1559(
+        signer: &PrivateKeySigner,
+        to: Address,
+        input: Vec<u8>,
+        tip: u128,
+    ) -> String {
         let tx = TxEip1559 {
             chain_id: 8453,
             nonce: 7,
@@ -120,11 +129,23 @@ mod tests {
 
     #[test]
     fn test_rejects_bad_input() {
-        assert!(matches!(parse_evm_transaction("deadbeef"), Err(EvmParseError::MissingPrefix)));
-        assert!(matches!(parse_evm_transaction("0xzz"), Err(EvmParseError::InvalidHex(_))));
-        assert!(matches!(parse_evm_transaction("0x02c0"), Err(EvmParseError::Decode(_))));
+        assert!(matches!(
+            parse_evm_transaction("deadbeef"),
+            Err(EvmParseError::MissingPrefix)
+        ));
+        assert!(matches!(
+            parse_evm_transaction("0xzz"),
+            Err(EvmParseError::InvalidHex(_))
+        ));
+        assert!(matches!(
+            parse_evm_transaction("0x02c0"),
+            Err(EvmParseError::Decode(_))
+        ));
         let huge = format!("0x{}", "00".repeat(MAX_RAW_TX_BYTES + 1));
-        assert!(matches!(parse_evm_transaction(&huge), Err(EvmParseError::TooLarge)));
+        assert!(matches!(
+            parse_evm_transaction(&huge),
+            Err(EvmParseError::TooLarge)
+        ));
     }
 
     #[test]

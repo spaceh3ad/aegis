@@ -5,8 +5,8 @@ use std::sync::{
 use std::time::Instant;
 
 use aegis_core::{
-    parse_evm_transaction, parse_transaction, parse_transaction_base58, Blocklist, RejectionResponse,
-    RuleInput, Verdict, WasmEngine,
+    parse_evm_transaction, parse_transaction, parse_transaction_base58, Blocklist,
+    RejectionResponse, RuleInput, Verdict, WasmEngine,
 };
 use axum::{
     body::Bytes,
@@ -16,7 +16,10 @@ use axum::{
 };
 use serde_json::Value;
 
-use crate::metrics::Metrics;
+use crate::{
+    lut::{LutOutcome, LutResolver},
+    metrics::Metrics,
+};
 
 static TRACE_COUNTER: AtomicU64 = AtomicU64::new(1);
 
@@ -32,6 +35,7 @@ pub struct AppState {
     pub metrics: Metrics,
     /// Optional Stage 3: Wasm dynamic rule engine.
     pub wasm_engine: Option<WasmEngine>,
+    pub luts: Arc<LutResolver>,
 }
 
 pub async fn rpc_handler(
@@ -41,10 +45,12 @@ pub async fn rpc_handler(
 ) -> Response {
     match serde_json::from_slice::<Value>(&body) {
         Ok(Value::Array(batch)) => handle_batch(&state, &headers, body, batch).await,
-        Ok(req) => match screen(&state, &req) {
-            Some(Verdict::Block { rule_id, code, message }) => {
-                json_response(&rejection(&req, code, message, &rule_id))
-            }
+        Ok(req) => match screen(&state, &req).await {
+            Some(Verdict::Block {
+                rule_id,
+                code,
+                message,
+            }) => json_response(&rejection(&req, code, message, &rule_id)),
             Some(Verdict::Drop) => StatusCode::NO_CONTENT.into_response(),
             _ => forward_raw(&state, &headers, body).await,
         },
@@ -59,9 +65,13 @@ pub async fn metrics_handler(State(state): State<Arc<AppState>>) -> impl IntoRes
 /// Runs the static + Wasm pipeline on transaction-submitting methods and records metrics.
 /// Returns `None` for every other method. Unparseable transactions are forwarded: the
 /// downstream node rejects them with the same deserializer, so nothing slips through.
-fn screen(state: &AppState, req: &Value) -> Option<Verdict> {
+async fn screen(state: &AppState, req: &Value) -> Option<Verdict> {
     let method = req.get("method").and_then(Value::as_str)?;
-    let param0 = req.get("params").and_then(|p| p.get(0)).and_then(Value::as_str).unwrap_or("");
+    let param0 = req
+        .get("params")
+        .and_then(|p| p.get(0))
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let start = Instant::now();
 
     let (static_verdict, rule_input) = match method {
@@ -78,7 +88,10 @@ fn screen(state: &AppState, req: &Value) -> Option<Verdict> {
                 parse_transaction_base58(param0)
             };
             match parsed {
-                Ok(tx) => (state.blocklist.check(&tx), RuleInput::from(&tx)),
+                Ok(mut tx) => {
+                    resolve_luts(state, &mut tx).await;
+                    (state.blocklist.check(&tx), RuleInput::from(&tx))
+                }
                 Err(_) => return count(state, Verdict::Allow),
             }
         }
@@ -88,12 +101,40 @@ fn screen(state: &AppState, req: &Value) -> Option<Verdict> {
         },
         _ => return None,
     };
-    state.metrics.inspection_duration.observe(start.elapsed().as_micros() as f64);
+    state
+        .metrics
+        .inspection_duration
+        .observe(start.elapsed().as_micros() as f64);
 
     let verdict = static_verdict
-        .or_else(|| state.wasm_engine.as_ref().and_then(|e| e.evaluate(&rule_input)))
+        .or_else(|| {
+            state
+                .wasm_engine
+                .as_ref()
+                .and_then(|e| e.evaluate(&rule_input))
+        })
         .unwrap_or(Verdict::Allow);
     count(state, verdict)
+}
+
+// Resolution failures fall back to static keys only. Each failure mode is one the node
+// also rejects: a missing or non-LUT table account, an index past the table's end (we
+// read at `processed`, the freshest view), or an unreachable node that can't take the tx.
+async fn resolve_luts(state: &AppState, tx: &mut aegis_core::InspectedTx) {
+    let label = match state.luts.resolve(tx).await {
+        Ok(LutOutcome::None) => return,
+        Ok(LutOutcome::Cached) => "cached",
+        Ok(LutOutcome::Fetched) => "fetched",
+        Err(e) => {
+            tracing::warn!("lookup table resolution failed, screening static keys only: {e}");
+            "error"
+        }
+    };
+    state
+        .metrics
+        .lut_resolve_total
+        .with_label_values(&[label])
+        .inc();
 }
 
 fn count(state: &AppState, verdict: Verdict) -> Option<Verdict> {
@@ -101,25 +142,45 @@ fn count(state: &AppState, verdict: Verdict) -> Option<Verdict> {
         Verdict::Allow => "allow",
         Verdict::Drop => "drop",
         Verdict::Block { rule_id, .. } => {
-            state.metrics.transactions_blocked_total.with_label_values(&[rule_id]).inc();
+            state
+                .metrics
+                .transactions_blocked_total
+                .with_label_values(&[rule_id])
+                .inc();
             "block"
         }
     };
-    state.metrics.transactions_total.with_label_values(&[label]).inc();
+    state
+        .metrics
+        .transactions_total
+        .with_label_values(&[label])
+        .inc();
     Some(verdict)
 }
 
 /// Blocked entries are answered locally, dropped entries get no response, and the rest are
 /// forwarded as a smaller batch. JSON-RPC 2.0 matches batch responses by id, so the merged
 /// array need not preserve request order.
-async fn handle_batch(state: &AppState, headers: &HeaderMap, body: Bytes, batch: Vec<Value>) -> Response {
+async fn handle_batch(
+    state: &AppState,
+    headers: &HeaderMap,
+    body: Bytes,
+    batch: Vec<Value>,
+) -> Response {
     let total = batch.len();
     let mut answered = Vec::new();
     let mut passthrough = Vec::with_capacity(total);
     for req in batch {
-        match screen(state, &req) {
-            Some(Verdict::Block { rule_id, code, message }) => {
-                answered.push(serde_json::to_value(rejection(&req, code, message, &rule_id)).unwrap_or_default());
+        match screen(state, &req).await {
+            Some(Verdict::Block {
+                rule_id,
+                code,
+                message,
+            }) => {
+                answered.push(
+                    serde_json::to_value(rejection(&req, code, message, &rule_id))
+                        .unwrap_or_default(),
+                );
             }
             Some(Verdict::Drop) => {}
             _ => passthrough.push(req),

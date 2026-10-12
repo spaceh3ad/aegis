@@ -8,6 +8,7 @@ pub struct Metrics {
     pub blocklist_size: Gauge,
     pub downstream_up: Gauge,
     pub feed_refresh_total: CounterVec,
+    pub lut_resolve_total: CounterVec,
     registry: Registry,
 }
 
@@ -20,7 +21,10 @@ impl Metrics {
             &["verdict"],
         )?;
         let transactions_blocked_total = CounterVec::new(
-            Opts::new("aegis_transactions_blocked_total", "Blocked transactions by rule"),
+            Opts::new(
+                "aegis_transactions_blocked_total",
+                "Blocked transactions by rule",
+            ),
             &["rule_id"],
         )?;
         let inspection_duration = Histogram::with_opts(
@@ -40,11 +44,23 @@ impl Metrics {
         ))?;
 
         let feed_refresh_total = CounterVec::new(
-            Opts::new("aegis_feed_refresh_total", "Threat feed refresh attempts by feed and result"),
+            Opts::new(
+                "aegis_feed_refresh_total",
+                "Threat feed refresh attempts by feed and result",
+            ),
             &["feed", "result"],
         )?;
 
+        let lut_resolve_total = CounterVec::new(
+            Opts::new(
+                "aegis_lut_resolve_total",
+                "Address lookup table resolutions by result",
+            ),
+            &["result"],
+        )?;
+
         registry.register(Box::new(feed_refresh_total.clone()))?;
+        registry.register(Box::new(lut_resolve_total.clone()))?;
         registry.register(Box::new(transactions_total.clone()))?;
         registry.register(Box::new(transactions_blocked_total.clone()))?;
         registry.register(Box::new(inspection_duration.clone()))?;
@@ -58,6 +74,7 @@ impl Metrics {
             blocklist_size,
             downstream_up,
             feed_refresh_total,
+            lut_resolve_total,
             registry,
         })
     }
@@ -66,7 +83,9 @@ impl Metrics {
         use prometheus::Encoder;
         let encoder = prometheus::TextEncoder::new();
         let mut buf = Vec::new();
-        encoder.encode(&self.registry.gather(), &mut buf).unwrap_or_default();
+        encoder
+            .encode(&self.registry.gather(), &mut buf)
+            .unwrap_or_default();
         String::from_utf8(buf).unwrap_or_default()
     }
 }

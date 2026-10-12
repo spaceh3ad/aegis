@@ -10,7 +10,15 @@
       "Bash(curl -s https://copilot.colosseum.com/api/v1/archives/d21650be-ec37-4069-b699-5fff4dd994e1 -H 'Authorization: Bearer __TRACKED_VAR__')",
       "Bash(curl -s -X POST https://copilot.colosseum.com/api/v1/search/projects -H 'Authorization: Bearer __TRACKED_VAR__' -H 'Content-Type: application/json' -d '{\"query\": \"security compliance transaction screening proxy validator\", \"limit\": 6, \"filters\": {\"winnersOnly\": true}}')",
       "Bash(mkdir -p /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/docs/wayfinder/tickets)",
-      "Bash(mkdir -p /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/docs/adr)"
+      "Bash(mkdir -p /Volumes/ADATA/Coding/blockchain/solana/tx-firewall-colloseum/docs/adr)",
+      "Bash(cargo bench *)",
+      "Bash(chmod +x *)",
+      "Bash(LISTEN_ADDR=127.0.0.1:18899 DOWNSTREAM_URL=http://127.0.0.1:19999 BLOCKLIST_PATH=crates/aegis-core/tests/fixtures/blocklist.txt ./target/release/aegis-proxy)",
+      "Bash(echo \"Proxy PID: $!\")",
+      "Bash(cargo metadata *)",
+      "Bash(python3 -c \"import sys,json; pkgs=json.load\\(sys.stdin\\)['packages']; [print\\(p['name'], p['version']\\) for p in pkgs if 'extism' in p['name']]\")",
+      "Bash(rustup target *)",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(p['name'], p['manifest_path']\\) for p in data['packages']]\")"
     ]
   }
 }

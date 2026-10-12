@@ -5,6 +5,7 @@ use aegis_proxy::{
     config::FeedSpec,
     feeds::SourceRegistry,
     handler::{metrics_handler, rpc_handler, AppState},
+    lut::LutResolver,
     metrics::Metrics,
 };
 use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
@@ -26,14 +27,20 @@ use wiremock::{matchers::method, Mock, MockServer, ResponseTemplate};
 
 const DEAD_DOWNSTREAM: &str = "http://127.0.0.1:19999";
 
-async fn serve(blocklist: Blocklist, downstream_url: String, wasm_engine: Option<WasmEngine>) -> String {
+async fn serve(
+    blocklist: Blocklist,
+    downstream_url: String,
+    wasm_engine: Option<WasmEngine>,
+) -> String {
     let metrics = Metrics::new().unwrap();
     metrics.blocklist_size.set(blocklist.len() as f64);
     metrics.downstream_up.set(1.0);
 
+    let downstream = Client::new();
     let state = Arc::new(AppState {
         blocklist,
-        downstream: Client::new(),
+        luts: Arc::new(LutResolver::new(downstream.clone(), downstream_url.clone())),
+        downstream,
         downstream_url,
         metrics,
         wasm_engine,
@@ -51,7 +58,12 @@ async fn serve(blocklist: Blocklist, downstream_url: String, wasm_engine: Option
 }
 
 async fn start_proxy(blocklist_path: PathBuf, downstream_url: String) -> String {
-    serve(Blocklist::load_from_file(&blocklist_path).unwrap(), downstream_url, None).await
+    serve(
+        Blocklist::load_from_file(&blocklist_path).unwrap(),
+        downstream_url,
+        None,
+    )
+    .await
 }
 
 fn write_blocklist(keys: &[&str]) -> tempfile::NamedTempFile {
@@ -63,7 +75,11 @@ fn write_blocklist(keys: &[&str]) -> tempfile::NamedTempFile {
     f
 }
 
-fn solana_tx_bytes(keys: Vec<Pubkey>, instructions: Vec<CompiledInstruction>, ro_unsigned: u8) -> Vec<u8> {
+fn solana_tx_bytes(
+    keys: Vec<Pubkey>,
+    instructions: Vec<CompiledInstruction>,
+    ro_unsigned: u8,
+) -> Vec<u8> {
     let msg = v0::Message {
         header: MessageHeader {
             num_required_signatures: 1,
@@ -84,7 +100,11 @@ fn solana_tx_bytes(keys: Vec<Pubkey>, instructions: Vec<CompiledInstruction>, ro
 
 fn make_tx_with_key(pubkey_b58: &str) -> String {
     use std::str::FromStr;
-    STANDARD.encode(solana_tx_bytes(vec![Pubkey::from_str(pubkey_b58).unwrap()], vec![], 0))
+    STANDARD.encode(solana_tx_bytes(
+        vec![Pubkey::from_str(pubkey_b58).unwrap()],
+        vec![],
+        0,
+    ))
 }
 
 fn make_clean_tx() -> String {
@@ -125,7 +145,10 @@ async fn post(url: &str, body: String) -> reqwest::Response {
 async fn ok_downstream(result: Value) -> MockServer {
     let mock = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"jsonrpc":"2.0","result":result,"id":1})))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(json!({"jsonrpc":"2.0","result":result,"id":1})),
+        )
         .mount(&mock)
         .await;
     mock
@@ -137,7 +160,11 @@ async fn test_blocklisted_solana_tx_is_rejected_with_source() {
     let tmp = write_blocklist(&[blocked_key]);
     let proxy_url = start_proxy(tmp.path().to_path_buf(), DEAD_DOWNSTREAM.into()).await;
 
-    let body = rpc_body("sendTransaction", json!([make_tx_with_key(blocked_key), {"encoding": "base64"}]), 1);
+    let body = rpc_body(
+        "sendTransaction",
+        json!([make_tx_with_key(blocked_key), {"encoding": "base64"}]),
+        1,
+    );
     let resp = post(&proxy_url, body).await;
 
     assert_eq!(resp.status(), 200);
@@ -156,7 +183,10 @@ async fn test_default_base58_encoding_is_screened() {
     let b58 = bs58_encode(&solana_tx_bytes(vec![blocked], vec![], 0));
     let resp = post(&proxy_url, rpc_body("sendTransaction", json!([b58]), 4)).await;
     let json: Value = resp.json().await.unwrap();
-    assert_eq!(json["error"]["code"], -32001, "no encoding option means base58 and must still be screened");
+    assert_eq!(
+        json["error"]["code"], -32001,
+        "no encoding option means base58 and must still be screened"
+    );
 }
 
 fn bs58_encode(bytes: &[u8]) -> String {
@@ -169,7 +199,11 @@ async fn test_clean_tx_forwards() {
     let tmp = write_blocklist(&[]);
     let proxy_url = start_proxy(tmp.path().to_path_buf(), mock.uri()).await;
 
-    let body = rpc_body("sendTransaction", json!([make_clean_tx(), {"encoding":"base64"}]), 2);
+    let body = rpc_body(
+        "sendTransaction",
+        json!([make_clean_tx(), {"encoding":"base64"}]),
+        2,
+    );
     let resp = post(&proxy_url, body).await;
 
     assert_eq!(resp.status(), 200);
@@ -183,7 +217,11 @@ async fn test_passthrough_method() {
     let tmp = write_blocklist(&[]);
     let proxy_url = start_proxy(tmp.path().to_path_buf(), mock.uri()).await;
 
-    let resp = post(&proxy_url, rpc_body("getBalance", json!(["11111111111111111111111111111111"]), 3)).await;
+    let resp = post(
+        &proxy_url,
+        rpc_body("getBalance", json!(["11111111111111111111111111111111"]), 3),
+    )
+    .await;
     assert_eq!(resp.status(), 200);
     let json: Value = resp.json().await.unwrap();
     assert_eq!(json["result"], 1_000_000);
@@ -194,7 +232,11 @@ async fn test_metrics_endpoint() {
     let tmp = write_blocklist(&[]);
     let proxy_url = start_proxy(tmp.path().to_path_buf(), DEAD_DOWNSTREAM.into()).await;
 
-    let resp = Client::new().get(format!("{proxy_url}/metrics")).send().await.unwrap();
+    let resp = Client::new()
+        .get(format!("{proxy_url}/metrics"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), 200);
     let text = resp.text().await.unwrap();
     assert!(text.contains("aegis_blocklist_size"));
@@ -208,7 +250,11 @@ async fn test_evm_sender_on_blocklist_is_rejected() {
     let proxy_url = start_proxy(tmp.path().to_path_buf(), DEAD_DOWNSTREAM.into()).await;
 
     let raw = raw_evm_tx(&signer, Address::repeat_byte(0x11));
-    let resp = post(&proxy_url, rpc_body("eth_sendRawTransaction", json!([raw]), 9)).await;
+    let resp = post(
+        &proxy_url,
+        rpc_body("eth_sendRawTransaction", json!([raw]), 9),
+    )
+    .await;
     let json: Value = resp.json().await.unwrap();
     assert_eq!(json["error"]["code"], -32001);
     assert_eq!(json["error"]["data"]["rule_id"], "blocklist:file");
@@ -222,7 +268,14 @@ async fn test_evm_call_to_blocklisted_contract_is_rejected() {
     let proxy_url = start_proxy(tmp.path().to_path_buf(), DEAD_DOWNSTREAM.into()).await;
 
     let raw = raw_evm_tx(&PrivateKeySigner::random(), target);
-    let json: Value = post(&proxy_url, rpc_body("eth_sendRawTransaction", json!([raw]), 1)).await.json().await.unwrap();
+    let json: Value = post(
+        &proxy_url,
+        rpc_body("eth_sendRawTransaction", json!([raw]), 1),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
     assert_eq!(json["error"]["code"], -32001);
 }
 
@@ -233,7 +286,14 @@ async fn test_clean_evm_tx_forwards() {
     let proxy_url = start_proxy(tmp.path().to_path_buf(), mock.uri()).await;
 
     let raw = raw_evm_tx(&PrivateKeySigner::random(), Address::repeat_byte(0x11));
-    let json: Value = post(&proxy_url, rpc_body("eth_sendRawTransaction", json!([raw]), 1)).await.json().await.unwrap();
+    let json: Value = post(
+        &proxy_url,
+        rpc_body("eth_sendRawTransaction", json!([raw]), 1),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
     assert_eq!(json["result"], "0xhash");
 }
 
@@ -257,7 +317,11 @@ async fn test_batch_blocked_entries_answered_locally_rest_forwarded() {
          "params":[STANDARD.encode(solana_tx_bytes(vec![blocked], vec![], 0)), {"encoding":"base64"}]},
         {"jsonrpc":"2.0","id":2,"method":"getSlot","params":[]}
     ]);
-    let json: Value = post(&proxy_url, batch.to_string()).await.json().await.unwrap();
+    let json: Value = post(&proxy_url, batch.to_string())
+        .await
+        .json()
+        .await
+        .unwrap();
     let items = json.as_array().expect("batch response is an array");
     assert_eq!(items.len(), 2);
 
@@ -265,8 +329,13 @@ async fn test_batch_blocked_entries_answered_locally_rest_forwarded() {
     assert_eq!(by_id(1)["error"]["code"], -32001);
     assert_eq!(by_id(2)["result"], "forwarded");
 
-    let forwarded: Value = serde_json::from_slice(&mock.received_requests().await.unwrap()[0].body).unwrap();
-    assert_eq!(forwarded.as_array().unwrap().len(), 1, "blocked tx must not reach downstream");
+    let forwarded: Value =
+        serde_json::from_slice(&mock.received_requests().await.unwrap()[0].body).unwrap();
+    assert_eq!(
+        forwarded.as_array().unwrap().len(),
+        1,
+        "blocked tx must not reach downstream"
+    );
     assert_eq!(forwarded[0]["method"], "getSlot");
 }
 
@@ -292,7 +361,9 @@ async fn test_threat_feed_hot_loads_and_attributes_source() {
     let evm_addr = Address::repeat_byte(0x77);
     let feed_server = MockServer::start().await;
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200).set_body_string(format!("# seal feed\n{evm_addr:#x}\n")))
+        .respond_with(
+            ResponseTemplate::new(200).set_body_string(format!("# seal feed\n{evm_addr:#x}\n")),
+        )
         .mount(&feed_server)
         .await;
 
@@ -301,7 +372,10 @@ async fn test_threat_feed_hot_loads_and_attributes_source() {
     let registry = SourceRegistry::new(
         blocklist.clone(),
         tmp.path().to_path_buf(),
-        vec![FeedSpec { name: "seal".into(), url: feed_server.uri() }],
+        vec![FeedSpec {
+            name: "seal".into(),
+            url: feed_server.uri(),
+        }],
     )
     .unwrap();
     let proxy_url = serve(blocklist.clone(), DEAD_DOWNSTREAM.into(), None).await;
@@ -312,7 +386,14 @@ async fn test_threat_feed_hot_loads_and_attributes_source() {
     assert_eq!(*results[0].as_ref().unwrap(), 1);
 
     let raw = raw_evm_tx(&PrivateKeySigner::random(), evm_addr);
-    let json: Value = post(&proxy_url, rpc_body("eth_sendRawTransaction", json!([raw]), 1)).await.json().await.unwrap();
+    let json: Value = post(
+        &proxy_url,
+        rpc_body("eth_sendRawTransaction", json!([raw]), 1),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
     assert_eq!(json["error"]["data"]["rule_id"], "blocklist:seal");
 }
 
@@ -320,7 +401,10 @@ async fn test_threat_feed_hot_loads_and_attributes_source() {
 async fn test_failing_feed_keeps_last_good_copy() {
     let feed_server = MockServer::start().await;
     Mock::given(method("GET"))
-        .respond_with(ResponseTemplate::new(200).set_body_string("0x0000000000000000000000000000000000000abc\n"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string("0x0000000000000000000000000000000000000abc\n"),
+        )
         .up_to_n_times(1)
         .mount(&feed_server)
         .await;
@@ -334,7 +418,10 @@ async fn test_failing_feed_keeps_last_good_copy() {
     let registry = SourceRegistry::new(
         blocklist.clone(),
         tmp.path().to_path_buf(),
-        vec![FeedSpec { name: "trm".into(), url: feed_server.uri() }],
+        vec![FeedSpec {
+            name: "trm".into(),
+            url: feed_server.uri(),
+        }],
     )
     .unwrap();
     assert_eq!(blocklist.len(), 1);
@@ -345,7 +432,11 @@ async fn test_failing_feed_keeps_last_good_copy() {
     assert!(registry.refresh_feeds(&Client::new()).await[0].is_err());
     assert_eq!(blocklist.len(), 2, "503 must not drop the feed's entries");
 
-    assert_eq!(registry.reload_file().unwrap(), 2, "file reload keeps cached feed entries");
+    assert_eq!(
+        registry.reload_file().unwrap(),
+        2,
+        "file reload keeps cached feed entries"
+    );
 }
 
 #[tokio::test]
@@ -361,7 +452,10 @@ async fn test_malformed_feed_is_rejected_without_publishing() {
     let registry = SourceRegistry::new(
         blocklist.clone(),
         tmp.path().to_path_buf(),
-        vec![FeedSpec { name: "bad".into(), url: feed_server.uri() }],
+        vec![FeedSpec {
+            name: "bad".into(),
+            url: feed_server.uri(),
+        }],
     )
     .unwrap();
     assert!(registry.refresh_feeds(&Client::new()).await[0].is_err());
@@ -370,40 +464,64 @@ async fn test_malformed_feed_is_rejected_without_publishing() {
 
 #[tokio::test]
 async fn test_wasm_rule_sees_compute_budget_through_proxy() {
-    let plugin = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/zero-fee-filter.wasm");
+    let plugin =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/zero-fee-filter.wasm");
     if !plugin.exists() {
         eprintln!("SKIP: plugins/zero-fee-filter.wasm not present");
         return;
     }
     let engine = WasmEngine::load(&plugin).unwrap();
     let mock = ok_downstream(json!("paidSig")).await;
-    let proxy_url = serve(Blocklist::new(AddressSets::default()), mock.uri(), Some(engine)).await;
+    let proxy_url = serve(
+        Blocklist::new(AddressSets::default()),
+        mock.uri(),
+        Some(engine),
+    )
+    .await;
 
     let cb = solana_sdk::pubkey!("ComputeBudget111111111111111111111111111111");
     let tx = |price: u64| {
         let mut limit = vec![2u8];
         limit.extend_from_slice(&1_000_000u32.to_le_bytes());
-        let mut ixs = vec![CompiledInstruction { program_id_index: 1, accounts: vec![], data: limit }];
+        let mut ixs = vec![CompiledInstruction {
+            program_id_index: 1,
+            accounts: vec![],
+            data: limit,
+        }];
         if price > 0 {
             let mut p = vec![3u8];
             p.extend_from_slice(&price.to_le_bytes());
-            ixs.push(CompiledInstruction { program_id_index: 1, accounts: vec![], data: p });
+            ixs.push(CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: p,
+            });
         }
         STANDARD.encode(solana_tx_bytes(vec![Pubkey::new_unique(), cb], ixs, 1))
     };
 
-    let spam: Value = post(&proxy_url, rpc_body("sendTransaction", json!([tx(0), {"encoding":"base64"}]), 1))
-        .await
-        .json()
-        .await
-        .unwrap();
+    let spam: Value = post(
+        &proxy_url,
+        rpc_body("sendTransaction", json!([tx(0), {"encoding":"base64"}]), 1),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
     assert_eq!(spam["error"]["code"], -32002);
     assert_eq!(spam["error"]["data"]["rule_id"], "zero-fee-spam");
 
-    let paid: Value = post(&proxy_url, rpc_body("sendTransaction", json!([tx(5_000), {"encoding":"base64"}]), 2))
-        .await
-        .json()
-        .await
-        .unwrap();
+    let paid: Value = post(
+        &proxy_url,
+        rpc_body(
+            "sendTransaction",
+            json!([tx(5_000), {"encoding":"base64"}]),
+            2,
+        ),
+    )
+    .await
+    .json()
+    .await
+    .unwrap();
     assert_eq!(paid["result"], "paidSig");
 }

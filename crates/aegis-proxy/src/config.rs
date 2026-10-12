@@ -36,18 +36,29 @@ impl Default for Config {
 impl Config {
     pub fn load() -> Result<Self, String> {
         let mut cfg = Self::default();
-        if let Ok(v) = std::env::var("LISTEN_ADDR") { cfg.listen_addr = v; }
-        if let Ok(v) = std::env::var("METRICS_ADDR") { cfg.metrics_addr = v; }
-        if let Ok(v) = std::env::var("DOWNSTREAM_URL") { cfg.downstream_url = v; }
-        if let Ok(v) = std::env::var("BLOCKLIST_PATH") { cfg.blocklist_path = v; }
-        if let Ok(v) = std::env::var("WASM_PLUGIN_PATH") { cfg.wasm_plugin_path = Some(v); }
-        if let Ok(v) = std::env::var("THREAT_FEEDS") { cfg.threat_feeds = parse_feeds(&v)?; }
+        if let Ok(v) = std::env::var("LISTEN_ADDR") {
+            cfg.listen_addr = v;
+        }
+        if let Ok(v) = std::env::var("METRICS_ADDR") {
+            cfg.metrics_addr = v;
+        }
+        if let Ok(v) = std::env::var("DOWNSTREAM_URL") {
+            cfg.downstream_url = v;
+        }
+        if let Ok(v) = std::env::var("BLOCKLIST_PATH") {
+            cfg.blocklist_path = v;
+        }
+        if let Ok(v) = std::env::var("WASM_PLUGIN_PATH") {
+            cfg.wasm_plugin_path = Some(v);
+        }
+        if let Ok(v) = std::env::var("THREAT_FEEDS") {
+            cfg.threat_feeds = parse_feeds(&v)?;
+        }
         if let Ok(v) = std::env::var("THREAT_FEED_INTERVAL_SECS") {
-            cfg.threat_feed_interval_secs = v
-                .parse::<u64>()
-                .ok()
-                .filter(|s| *s > 0)
-                .ok_or_else(|| format!("THREAT_FEED_INTERVAL_SECS must be a positive integer, got {v:?}"))?;
+            cfg.threat_feed_interval_secs =
+                v.parse::<u64>().ok().filter(|s| *s > 0).ok_or_else(|| {
+                    format!("THREAT_FEED_INTERVAL_SECS must be a positive integer, got {v:?}")
+                })?;
         }
         Ok(cfg)
     }
@@ -64,17 +75,26 @@ pub fn parse_feeds(spec: &str) -> Result<Vec<FeedSpec>, String> {
         let (name, url) = (name.trim(), url.trim());
         if name.is_empty()
             || name == "file"
-            || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
         {
-            return Err(format!("invalid threat feed name {name:?}: use [A-Za-z0-9_-], not \"file\""));
+            return Err(format!(
+                "invalid threat feed name {name:?}: use [A-Za-z0-9_-], not \"file\""
+            ));
         }
         if !(url.starts_with("https://") || url.starts_with("http://")) {
-            return Err(format!("threat feed {name} url must be http(s), got {url:?}"));
+            return Err(format!(
+                "threat feed {name} url must be http(s), got {url:?}"
+            ));
         }
         if feeds.iter().any(|f| f.name == name) {
             return Err(format!("duplicate threat feed name {name:?}"));
         }
-        feeds.push(FeedSpec { name: name.into(), url: url.into() });
+        feeds.push(FeedSpec {
+            name: name.into(),
+            url: url.into(),
+        });
     }
     Ok(feeds)
 }
@@ -86,12 +106,19 @@ mod tests {
 
     #[test]
     fn parses_feed_list() {
-        let feeds = parse_feeds(" seal=https://a.example/list.txt , trm_1=http://b:8080/x ,").unwrap();
+        let feeds =
+            parse_feeds(" seal=https://a.example/list.txt , trm_1=http://b:8080/x ,").unwrap();
         assert_eq!(
             feeds,
             vec![
-                FeedSpec { name: "seal".into(), url: "https://a.example/list.txt".into() },
-                FeedSpec { name: "trm_1".into(), url: "http://b:8080/x".into() },
+                FeedSpec {
+                    name: "seal".into(),
+                    url: "https://a.example/list.txt".into()
+                },
+                FeedSpec {
+                    name: "trm_1".into(),
+                    url: "http://b:8080/x".into()
+                },
             ]
         );
         assert!(parse_feeds("").unwrap().is_empty());

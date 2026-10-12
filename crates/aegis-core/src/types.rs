@@ -6,11 +6,29 @@ pub struct InspectedTx {
     pub signers: Vec<[u8; 32]>,
     pub writable: Vec<[u8; 32]>,
     pub program_ids: Vec<[u8; 32]>,
-    pub lut_refs: Vec<[u8; 32]>,
+    pub lut_lookups: Vec<LutLookup>,
+    /// Addresses resolved from `lut_lookups`; empty until a resolver fills it in.
+    pub loaded_keys: Vec<[u8; 32]>,
     /// From a ComputeBudget SetComputeUnitLimit instruction, if present.
     pub cu_limit: Option<u32>,
     /// From a ComputeBudget SetComputeUnitPrice instruction (micro-lamports per CU), if present.
     pub cu_price: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LutLookup {
+    pub table: [u8; 32],
+    pub writable_indexes: Vec<u8>,
+    pub readonly_indexes: Vec<u8>,
+}
+
+impl LutLookup {
+    pub fn indexes(&self) -> impl Iterator<Item = u8> + '_ {
+        self.writable_indexes
+            .iter()
+            .chain(&self.readonly_indexes)
+            .copied()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,7 +50,11 @@ pub struct EvmTx {
 #[derive(Debug, Clone)]
 pub enum Verdict {
     Allow,
-    Block { rule_id: String, code: i32, message: String },
+    Block {
+        rule_id: String,
+        code: i32,
+        message: String,
+    },
     Drop,
 }
 

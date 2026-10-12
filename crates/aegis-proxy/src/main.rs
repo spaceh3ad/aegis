@@ -5,6 +5,7 @@ use aegis_proxy::{
     config::Config,
     feeds::SourceRegistry,
     handler::{metrics_handler, rpc_handler, AppState},
+    lut::LutResolver,
     metrics::Metrics,
 };
 use axum::{routing::any, Router};
@@ -19,24 +20,34 @@ async fn main() {
 
     let blocklist = Blocklist::new(AddressSets::default());
     let sources = Arc::new(
-        SourceRegistry::new(blocklist.clone(), PathBuf::from(&cfg.blocklist_path), cfg.threat_feeds.clone())
-            .expect("failed to load blocklist"),
+        SourceRegistry::new(
+            blocklist.clone(),
+            PathBuf::from(&cfg.blocklist_path),
+            cfg.threat_feeds.clone(),
+        )
+        .expect("failed to load blocklist"),
     );
 
     let metrics = Metrics::new().expect("failed to init metrics");
     metrics.blocklist_size.set(blocklist.len() as f64);
     metrics.downstream_up.set(1.0);
 
-    let wasm_engine = cfg.wasm_plugin_path.as_deref().map(|p| {
-        WasmEngine::load(std::path::Path::new(p)).expect("failed to load wasm plugin")
-    });
+    let wasm_engine = cfg
+        .wasm_plugin_path
+        .as_deref()
+        .map(|p| WasmEngine::load(std::path::Path::new(p)).expect("failed to load wasm plugin"));
     if let Some(ref path) = cfg.wasm_plugin_path {
         info!(plugin = %path, "Wasm rule engine loaded");
     }
 
+    let downstream = reqwest::Client::new();
     let state = Arc::new(AppState {
         blocklist,
-        downstream: reqwest::Client::new(),
+        luts: Arc::new(LutResolver::new(
+            downstream.clone(),
+            cfg.downstream_url.clone(),
+        )),
+        downstream,
         downstream_url: cfg.downstream_url.clone(),
         metrics,
         wasm_engine,
@@ -62,9 +73,16 @@ async fn main() {
                             "error"
                         }
                     };
-                    state.metrics.feed_refresh_total.with_label_values(&[&feed.name, outcome]).inc();
+                    state
+                        .metrics
+                        .feed_refresh_total
+                        .with_label_values(&[&feed.name, outcome])
+                        .inc();
                 }
-                state.metrics.blocklist_size.set(state.blocklist.len() as f64);
+                state
+                    .metrics
+                    .blocklist_size
+                    .set(state.blocklist.len() as f64);
             }
         });
     }

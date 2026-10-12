@@ -13,7 +13,11 @@ pub enum BlocklistError {
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("{source_name}: invalid address on line {line}: {reason}")]
-    InvalidAddress { source_name: String, line: usize, reason: String },
+    InvalidAddress {
+        source_name: String,
+        line: usize,
+        reason: String,
+    },
 }
 
 /// Addresses from one or more named sources. Each entry remembers which source listed it,
@@ -29,7 +33,10 @@ impl AddressSets {
     /// Parses one address per line. `0x`-prefixed 20-byte hex is EVM, anything else must be
     /// a base58 32-byte Solana pubkey. Blank lines and `#` comments are ignored.
     pub fn parse(source: &str, text: &str) -> Result<Self, BlocklistError> {
-        let mut sets = Self { sources: vec![source.to_string()], ..Self::default() };
+        let mut sets = Self {
+            sources: vec![source.to_string()],
+            ..Self::default()
+        };
         for (i, raw) in text.lines().enumerate() {
             let line = raw.trim();
             if line.is_empty() || line.starts_with('#') {
@@ -46,7 +53,9 @@ impl AddressSets {
                 sets.evm.entry(addr).or_insert(0);
             } else {
                 let mut key = [0u8; 32];
-                let n = bs58::decode(line).onto(&mut key[..]).map_err(|e| err(e.to_string()))?;
+                let n = bs58::decode(line)
+                    .onto(&mut key[..])
+                    .map_err(|e| err(e.to_string()))?;
                 if n != 32 {
                     return Err(err(format!("decoded {n} bytes, expected 32")));
                 }
@@ -81,11 +90,15 @@ impl AddressSets {
     }
 
     pub fn svm_source(&self, key: &[u8; 32]) -> Option<&str> {
-        self.svm.get(key).map(|id| self.sources[*id as usize].as_str())
+        self.svm
+            .get(key)
+            .map(|id| self.sources[*id as usize].as_str())
     }
 
     pub fn evm_source(&self, addr: &[u8; 20]) -> Option<&str> {
-        self.evm.get(addr).map(|id| self.sources[*id as usize].as_str())
+        self.evm
+            .get(addr)
+            .map(|id| self.sources[*id as usize].as_str())
     }
 }
 
@@ -93,7 +106,9 @@ fn block(source: &str) -> Verdict {
     Verdict::Block {
         rule_id: format!("blocklist:{source}"),
         code: BLOCKLIST_CODE,
-        message: format!("Transaction references an address on the operator blocklist (source: {source})."),
+        message: format!(
+            "Transaction references an address on the operator blocklist (source: {source})."
+        ),
     }
 }
 
@@ -105,11 +120,16 @@ pub struct Blocklist {
 
 impl Blocklist {
     pub fn new(sets: AddressSets) -> Self {
-        Self { inner: Arc::new(ArcSwap::from_pointee(sets)) }
+        Self {
+            inner: Arc::new(ArcSwap::from_pointee(sets)),
+        }
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self, BlocklistError> {
-        Ok(Self::new(AddressSets::parse("file", &std::fs::read_to_string(path)?)?))
+        Ok(Self::new(AddressSets::parse(
+            "file",
+            &std::fs::read_to_string(path)?,
+        )?))
     }
 
     pub fn reload(&self, path: &Path) -> Result<(), BlocklistError> {
@@ -123,7 +143,11 @@ impl Blocklist {
 
     pub fn check(&self, tx: &InspectedTx) -> Option<Verdict> {
         let sets = self.inner.load();
-        tx.static_keys.iter().find_map(|k| sets.svm_source(k)).map(block)
+        tx.static_keys
+            .iter()
+            .chain(&tx.loaded_keys)
+            .find_map(|k| sets.svm_source(k))
+            .map(block)
     }
 
     /// Screens both the recovered sender and the call target.
@@ -156,7 +180,10 @@ mod tests {
     }
 
     fn svm_tx(keys: Vec<[u8; 32]>) -> InspectedTx {
-        InspectedTx { static_keys: keys, ..Default::default() }
+        InspectedTx {
+            static_keys: keys,
+            ..Default::default()
+        }
     }
 
     fn evm_tx(from: [u8; 20], to: Option<[u8; 20]>) -> EvmTx {
@@ -211,21 +238,40 @@ mod tests {
         assert_eq!(bl.len(), 5);
 
         let new_key = solana_sdk::pubkey::Pubkey::new_unique();
-        let tmp_path = std::env::temp_dir().join(format!("aegis_test_blocklist_{}.txt", std::process::id()));
+        let tmp_path =
+            std::env::temp_dir().join(format!("aegis_test_blocklist_{}.txt", std::process::id()));
         let mut f = std::fs::File::create(&tmp_path).unwrap();
         writeln!(f, "{}", new_key).unwrap();
 
         bl.reload(&tmp_path).unwrap();
         let _ = std::fs::remove_file(&tmp_path);
         assert_eq!(bl.len(), 1);
-        assert!(matches!(bl.check(&svm_tx(vec![new_key.to_bytes()])), Some(Verdict::Block { .. })));
+        assert!(matches!(
+            bl.check(&svm_tx(vec![new_key.to_bytes()])),
+            Some(Verdict::Block { .. })
+        ));
+    }
+
+    #[test]
+    fn test_lookup_table_loaded_keys_are_screened() {
+        let listed = solana_sdk::pubkey::Pubkey::new_unique();
+        let bl = Blocklist::new(AddressSets::parse("file", &listed.to_string()).unwrap());
+        let tx = InspectedTx {
+            static_keys: vec![[1; 32]],
+            loaded_keys: vec![listed.to_bytes()],
+            ..Default::default()
+        };
+        assert!(bl.check(&tx).is_some());
     }
 
     #[test]
     fn test_short_base58_is_rejected_not_zeroed() {
         // "1111" decodes to 4 zero bytes; it must not become the all-zero System Program id.
         let err = AddressSets::parse("file", "1111\n").unwrap_err();
-        assert!(matches!(err, BlocklistError::InvalidAddress { line: 1, .. }));
+        assert!(matches!(
+            err,
+            BlocklistError::InvalidAddress { line: 1, .. }
+        ));
     }
 
     #[test]
@@ -237,8 +283,14 @@ mod tests {
 
         let mut ronin = [0u8; 20];
         hex::decode_to_slice("098B716B8Aaf21512996dC57EB0615e2383E2f96", &mut ronin).unwrap();
-        assert!(bl.check_evm(&evm_tx(ronin, None)).is_some(), "sender screened");
-        assert!(bl.check_evm(&evm_tx([1; 20], Some(ronin))).is_some(), "target screened");
+        assert!(
+            bl.check_evm(&evm_tx(ronin, None)).is_some(),
+            "sender screened"
+        );
+        assert!(
+            bl.check_evm(&evm_tx([1; 20], Some(ronin))).is_some(),
+            "target screened"
+        );
         assert!(bl.check_evm(&evm_tx([1; 20], Some([2; 20]))).is_none());
     }
 

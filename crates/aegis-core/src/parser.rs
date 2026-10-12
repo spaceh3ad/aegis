@@ -7,9 +7,10 @@ use solana_sdk::{
 };
 use thiserror::Error;
 
-use crate::types::InspectedTx;
+use crate::types::{InspectedTx, LutLookup};
 
-const COMPUTE_BUDGET_ID: Pubkey = solana_sdk::pubkey!("ComputeBudget111111111111111111111111111111");
+const COMPUTE_BUDGET_ID: Pubkey =
+    solana_sdk::pubkey!("ComputeBudget111111111111111111111111111111");
 const SET_CU_LIMIT: u8 = 2;
 const SET_CU_PRICE: u8 = 3;
 
@@ -50,11 +51,22 @@ pub fn parse_transaction_bytes(bytes: &[u8]) -> Result<InspectedTx, ParseError> 
     let tx: VersionedTransaction = bincode::deserialize(bytes)?;
 
     match &tx.message {
-        VersionedMessage::Legacy(msg) => {
-            inspect(&msg.header, &msg.account_keys, &msg.instructions, Vec::new())
-        }
+        VersionedMessage::Legacy(msg) => inspect(
+            &msg.header,
+            &msg.account_keys,
+            &msg.instructions,
+            Vec::new(),
+        ),
         VersionedMessage::V0(msg) => {
-            let luts = msg.address_table_lookups.iter().map(|l| l.account_key.to_bytes()).collect();
+            let luts = msg
+                .address_table_lookups
+                .iter()
+                .map(|l| LutLookup {
+                    table: l.account_key.to_bytes(),
+                    writable_indexes: l.writable_indexes.clone(),
+                    readonly_indexes: l.readonly_indexes.clone(),
+                })
+                .collect();
             inspect(&msg.header, &msg.account_keys, &msg.instructions, luts)
         }
     }
@@ -65,7 +77,7 @@ fn inspect(
     header: &MessageHeader,
     keys: &[Pubkey],
     instructions: &[CompiledInstruction],
-    lut_refs: Vec<[u8; 32]>,
+    lut_lookups: Vec<LutLookup>,
 ) -> Result<InspectedTx, ParseError> {
     let num_signers = header.num_required_signatures as usize;
     let signed_readonly = header.num_readonly_signed_accounts as usize;
@@ -81,7 +93,9 @@ fn inspect(
         .len()
         .checked_sub(unsigned_readonly)
         .filter(|end| *end >= num_signers)
-        .ok_or(ParseError::Malformed("readonly unsigned accounts overlap signers"))?;
+        .ok_or(ParseError::Malformed(
+            "readonly unsigned accounts overlap signers",
+        ))?;
 
     let static_keys: Vec<[u8; 32]> = keys.iter().map(|k| k.to_bytes()).collect();
     let signers = static_keys[..num_signers].to_vec();
@@ -115,7 +129,8 @@ fn inspect(
         signers,
         writable,
         program_ids,
-        lut_refs,
+        lut_lookups,
+        loaded_keys: Vec::new(),
         cu_limit,
         cu_price,
     })
@@ -126,13 +141,8 @@ mod tests {
     use super::*;
     #[allow(deprecated)]
     use solana_sdk::{
-        hash::Hash,
-        message::legacy::Message as LegacyMessage,
-        pubkey::Pubkey,
-        signature::Keypair,
-        signer::Signer,
-        transaction::VersionedTransaction,
-        system_instruction,
+        hash::Hash, message::legacy::Message as LegacyMessage, pubkey::Pubkey, signature::Keypair,
+        signer::Signer, system_instruction, transaction::VersionedTransaction,
     };
 
     #[allow(deprecated)]
@@ -141,9 +151,11 @@ mod tests {
         let recipient = Pubkey::new_unique();
         let ix = system_instruction::transfer(&payer.pubkey(), &recipient, 1_000_000);
         let msg = LegacyMessage::new(&[ix], Some(&payer.pubkey()));
-        let tx = VersionedTransaction::from(
-            solana_sdk::transaction::Transaction::new(&[&payer], msg, Hash::default())
-        );
+        let tx = VersionedTransaction::from(solana_sdk::transaction::Transaction::new(
+            &[&payer],
+            msg,
+            Hash::default(),
+        ));
         let bytes = bincode::serialize(&tx).unwrap();
         STANDARD.encode(bytes)
     }
@@ -154,7 +166,7 @@ mod tests {
         let result = parse_transaction(&b64).unwrap();
         assert!(!result.signers.is_empty(), "should have signers");
         assert!(!result.program_ids.is_empty(), "should have program ids");
-        assert!(result.lut_refs.is_empty(), "legacy tx has no LUTs");
+        assert!(result.lut_lookups.is_empty(), "legacy tx has no LUTs");
     }
 
     #[test]
@@ -191,8 +203,14 @@ mod tests {
         let b64 = STANDARD.encode(bincode::serialize(&tx).unwrap());
         let result = parse_transaction(&b64).unwrap();
 
-        assert_eq!(result.lut_refs.len(), 1);
-        assert_eq!(result.lut_refs[0], lut_key.to_bytes());
+        assert_eq!(
+            result.lut_lookups,
+            vec![LutLookup {
+                table: lut_key.to_bytes(),
+                writable_indexes: vec![0],
+                readonly_indexes: vec![]
+            }]
+        );
         assert_eq!(result.signers.len(), 1);
         assert_eq!(result.signers[0], payer.pubkey().to_bytes());
     }
@@ -210,7 +228,11 @@ mod tests {
         assert!(matches!(err, ParseError::Deserialize(_)));
     }
 
-    fn encode_v0(header: MessageHeader, keys: Vec<Pubkey>, ixs: Vec<CompiledInstruction>) -> String {
+    fn encode_v0(
+        header: MessageHeader,
+        keys: Vec<Pubkey>,
+        ixs: Vec<CompiledInstruction>,
+    ) -> String {
         use solana_sdk::message::v0;
         let msg = v0::Message {
             header,
@@ -246,8 +268,16 @@ mod tests {
             header(1, 0, 1),
             vec![payer, COMPUTE_BUDGET_ID],
             vec![
-                CompiledInstruction { program_id_index: 1, accounts: vec![], data: limit_data },
-                CompiledInstruction { program_id_index: 1, accounts: vec![], data: price_data },
+                CompiledInstruction {
+                    program_id_index: 1,
+                    accounts: vec![],
+                    data: limit_data,
+                },
+                CompiledInstruction {
+                    program_id_index: 1,
+                    accounts: vec![],
+                    data: price_data,
+                },
             ],
         );
         let tx = parse_transaction(&b64).unwrap();
@@ -261,7 +291,11 @@ mod tests {
         let b64 = encode_v0(
             header(1, 0, 1),
             vec![Pubkey::new_unique(), COMPUTE_BUDGET_ID],
-            vec![CompiledInstruction { program_id_index: 1, accounts: vec![], data: vec![SET_CU_LIMIT, 1] }],
+            vec![CompiledInstruction {
+                program_id_index: 1,
+                accounts: vec![],
+                data: vec![SET_CU_LIMIT, 1],
+            }],
         );
         let tx = parse_transaction(&b64).unwrap();
         assert_eq!(tx.cu_limit, None);
@@ -283,9 +317,16 @@ mod tests {
         let oob = encode_v0(
             header(1, 0, 0),
             vec![k()],
-            vec![CompiledInstruction { program_id_index: 9, accounts: vec![], data: vec![] }],
+            vec![CompiledInstruction {
+                program_id_index: 9,
+                accounts: vec![],
+                data: vec![],
+            }],
         );
-        assert!(matches!(parse_transaction(&oob).unwrap_err(), ParseError::Malformed(_)));
+        assert!(matches!(
+            parse_transaction(&oob).unwrap_err(),
+            ParseError::Malformed(_)
+        ));
     }
 
     #[test]
@@ -302,7 +343,10 @@ mod tests {
     #[test]
     fn test_oversized_rejected_before_decode() {
         let big = "1".repeat(MAX_ENCODED_TX_LEN + 1);
-        assert!(matches!(parse_transaction_base58(&big), Err(ParseError::TooLarge)));
+        assert!(matches!(
+            parse_transaction_base58(&big),
+            Err(ParseError::TooLarge)
+        ));
         assert!(matches!(parse_transaction(&big), Err(ParseError::TooLarge)));
     }
 

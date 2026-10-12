@@ -71,7 +71,12 @@ fn bench_blocklist_check(c: &mut Criterion) {
     let (_tmp, path) = write_temp_blocklist(&[&blocked_str]);
     let blocklist = Blocklist::load_from_file(&path).unwrap();
 
-    let clean_tx = make_v0_tx(&clean_keys.iter().map(|s| s.parse().unwrap()).collect::<Vec<_>>());
+    let clean_tx = make_v0_tx(
+        &clean_keys
+            .iter()
+            .map(|s| s.parse().unwrap())
+            .collect::<Vec<_>>(),
+    );
     let blocked_tx = make_v0_tx(&[blocked]);
 
     let clean_inspected = parse_transaction(&clean_tx).unwrap();

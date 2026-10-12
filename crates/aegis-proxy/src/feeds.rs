@@ -1,8 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::Mutex,
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Mutex, time::Duration};
 
 use aegis_core::{AddressSets, Blocklist, BlocklistError};
 use thiserror::Error;
@@ -40,12 +36,19 @@ struct Sources {
 }
 
 impl SourceRegistry {
-    pub fn new(blocklist: Blocklist, file_path: PathBuf, feeds: Vec<FeedSpec>) -> Result<Self, BlocklistError> {
+    pub fn new(
+        blocklist: Blocklist,
+        file_path: PathBuf,
+        feeds: Vec<FeedSpec>,
+    ) -> Result<Self, BlocklistError> {
         let file = AddressSets::parse("file", &std::fs::read_to_string(&file_path)?)?;
         let registry = Self {
             blocklist,
             file_path,
-            state: Mutex::new(Sources { file, feeds: vec![None; feeds.len()] }),
+            state: Mutex::new(Sources {
+                file,
+                feeds: vec![None; feeds.len()],
+            }),
             feeds,
         };
         registry.publish(&registry.state.lock().unwrap());
@@ -84,7 +87,8 @@ impl SourceRegistry {
     }
 
     fn publish(&self, state: &Sources) -> usize {
-        let merged = AddressSets::merge(std::iter::once(&state.file).chain(state.feeds.iter().flatten()));
+        let merged =
+            AddressSets::merge(std::iter::once(&state.file).chain(state.feeds.iter().flatten()));
         let n = merged.len();
         self.blocklist.replace(merged);
         n
@@ -92,8 +96,16 @@ impl SourceRegistry {
 }
 
 async fn fetch(client: &reqwest::Client, feed: &FeedSpec) -> Result<AddressSets, FeedError> {
-    let mut resp = client.get(&feed.url).timeout(FETCH_TIMEOUT).send().await?.error_for_status()?;
-    if resp.content_length().is_some_and(|n| n as usize > MAX_FEED_BYTES) {
+    let mut resp = client
+        .get(&feed.url)
+        .timeout(FETCH_TIMEOUT)
+        .send()
+        .await?
+        .error_for_status()?;
+    if resp
+        .content_length()
+        .is_some_and(|n| n as usize > MAX_FEED_BYTES)
+    {
         return Err(FeedError::TooLarge);
     }
     let mut body = Vec::new();
