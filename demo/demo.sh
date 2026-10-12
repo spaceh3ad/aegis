@@ -60,9 +60,6 @@ k = base58.b58decode('CVC5aBX8ckVF2ByAKRXjg9gPMqYNNCSBFkSRuGvxLbzv')
 print(k.hex())
 " 2>/dev/null || echo '')"
 
-# Fallback: use So11111111111111111111111111111111111111112 (always in test blocklists)
-FALLBACK_KEY_HEX="0000000000000000000000000000000000000000000000000000000000000001"
-
 banner "Aegis Demo"
 info "Target proxy: $PROXY"
 
@@ -108,23 +105,24 @@ fi
 
 # ── Test 4: Blocked sendTransaction ───────────────────────────────────────
 banner "Test 4 — Blocked sendTransaction (blocklisted address)"
-# Use So11111111111111111111111111111111111111112 = system program, always loaded in test blocklists
-# pubkey bytes: all zeros except last byte = 1
-BLOCKED_B64="$(make_tx_b64 "$FALLBACK_KEY_HEX")"
-resp=$(curl -sf --max-time 3 -X POST "$PROXY" \
-    -H "content-type: application/json" \
-    -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"sendTransaction\",\"params\":[\"$BLOCKED_B64\",{\"encoding\":\"base64\"}]}" 2>/dev/null || echo '{}')
-code=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',{}).get('code','none'))" 2>/dev/null || echo "parse_error")
+# Use the first blocklisted key from blocklist.txt so the block is deterministic.
+if [ -n "$BLOCKED_KEY_HEX" ]; then
+    BLOCKED_B64="$(make_tx_b64 "$BLOCKED_KEY_HEX")"
+    resp=$(curl -sf --max-time 3 -X POST "$PROXY" \
+        -H "content-type: application/json" \
+        -d "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"sendTransaction\",\"params\":[\"$BLOCKED_B64\",{\"encoding\":\"base64\"}]}" 2>/dev/null || echo '{}')
+    code=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('error',{}).get('code','none'))" 2>/dev/null || echo "parse_error")
 
-if [ "$code" = "-32001" ]; then
-    rule=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['error']['data']['rule_id'])" 2>/dev/null)
-    trace=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['error']['data']['trace_id'])" 2>/dev/null)
-    blocked "Transaction REJECTED — code=$code, rule_id=$rule, trace_id=$trace"
-    ok "Address list block working correctly"
+    if [ "$code" = "-32001" ]; then
+        rule=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['error']['data']['rule_id'])" 2>/dev/null)
+        trace=$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['error']['data']['trace_id'])" 2>/dev/null)
+        blocked "Transaction REJECTED before reaching the node — code=$code, rule_id=$rule, trace_id=$trace"
+        ok "Address list block working correctly"
+    else
+        echo "FAIL: blocklisted tx was NOT blocked (code=$code)" >&2; exit 1
+    fi
 else
-    info "Key not in this deployment's blocklist (code=$code) — expected if running with default blocklist.txt"
-    info "Response: $resp"
-    info "To test blocking: add the key to blocklist.txt and send SIGHUP to reload"
+    info "python3 base58 unavailable — skipping deterministic block test"
 fi
 
 # ── Test 5: Metrics after load ─────────────────────────────────────────────

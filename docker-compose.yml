@@ -1,24 +1,42 @@
 services:
   validator:
     image: solanalabs/solana:v1.18.26
+    # The Solana image is amd64-only; this pin makes the emulation explicit on arm64 hosts.
+    platform: linux/amd64
+    # Explicit, non-colliding ports: RPC 8899, pubsub 8901. The default pubsub port is
+    # 8900, so pinning --rpc-port to 8900 would clash and the RPC would not answer HTTP.
     command: >
       solana-test-validator
-      --rpc-port 8900
+      --rpc-port 8899
+      --rpc-pubsub-port 8901
+      --faucet-port 9900
       --quiet
     ports:
-      - "8900:8900"
+      # Host 8900 -> container RPC 8899 (host 8899 is Aegis).
+      - "8900:8899"
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:8900/health"]
+      # The image ships no curl/wget and /bin/sh is dash, but bash exists, so probe with
+      # bash's /dev/tcp. JSON-RPC getHealth is the canonical readiness signal.
+      # `$$` escapes the `$` so Compose does not interpolate these shell variables.
+      test:
+        - CMD
+        - bash
+        - -c
+        - |
+          json='{"jsonrpc":"2.0","id":1,"method":"getHealth"}';
+          exec 3<>/dev/tcp/127.0.0.1/8899;
+          printf 'POST / HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n%s' "$${#json}" "$$json" >&3;
+          grep -q '"result":"ok"' <&3
       interval: 5s
       timeout: 3s
-      retries: 10
-      start_period: 10s
+      retries: 60
+      start_period: 180s
 
   aegis:
     build: .
     environment:
       LISTEN_ADDR: "0.0.0.0:8899"
-      DOWNSTREAM_URL: "http://validator:8900"
+      DOWNSTREAM_URL: "http://validator:8899"
       BLOCKLIST_PATH: "/app/blocklist.txt"
     ports:
       - "8899:8899"
@@ -52,7 +70,7 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
     ports:
-      - "3000:3000"
+      - "3001:3000"
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:

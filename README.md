@@ -93,8 +93,8 @@ The same binary serves any chain. Point `DOWNSTREAM_URL` at a Solana RPC or an E
 ```bash
 cargo build --release -p aegis-proxy
 
-# Solana
-DOWNSTREAM_URL=http://127.0.0.1:8900 ./target/release/aegis-proxy
+# Solana (point DOWNSTREAM_URL at any JSON-RPC: local node, Helius, Triton, public cluster)
+DOWNSTREAM_URL=https://api.testnet.solana.com ./target/release/aegis-proxy
 
 # EVM (e.g. Base / Arbitrum / Ethereum node)
 DOWNSTREAM_URL=http://127.0.0.1:8545 LISTEN_ADDR=0.0.0.0:8546 ./target/release/aegis-proxy
@@ -105,14 +105,37 @@ WASM_PLUGIN_PATH=plugins/zero-fee-filter.wasm \
 ./target/release/aegis-proxy
 ```
 
-### Docker Compose (Solana demo stack)
+`sendTransaction` is only enforced when `DOWNSTREAM_URL` is a node Aegis can actually
+reach: the clean-path check forwards the transaction downstream, so an unreachable or
+read-only RPC turns a clean transaction into a `502`. Aegis never *pretends* to accept a
+transaction it could not have delivered.
+
+### Docker Compose — against a real RPC (recommended for a live demo)
+
+No local validator, no emulation. Runs Aegis in front of any Solana RPC (Helius,
+Triton, public cluster):
 
 ```bash
-docker compose up
+# Public testnet:
+docker compose -f docker-compose.rpc.yml up --build
+
+# Helius testnet (key in the URL):
+AEGIS_RPC_URL="https://testnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" \
+  docker compose -f docker-compose.rpc.yml up --build
+
+AEGIS_PROXY_URL=http://127.0.0.1:8899 bash demo/demo.sh
+```
+
+### Docker Compose — full local stack (self-contained, offline)
+
+```bash
+docker compose up --build
 bash demo/demo.sh
 ```
 
-Starts `aegis` (:8899), `solana-test-validator` (:8900), Prometheus (:9090) and Grafana (http://localhost:3000).
+Starts `aegis` (:8899), `solana-test-validator` (host :8900), Prometheus (:9090) and
+Grafana (http://localhost:3001). The validator image is `linux/amd64`; on Apple silicon it
+runs under emulation, so first start can take a few minutes.
 
 ---
 
