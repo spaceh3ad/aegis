@@ -188,3 +188,41 @@ docker compose up aegis-validator-ingress
 - Auto-updating threat intelligence feeds (direct integrations with Chainalysis, TRM, Elliptic)
 - High-availability clustering and distributed rate limiting across regional nodes
 - Compliance audit dashboard with cryptographically signed JSON-RPC rejection receipts
+
+---
+
+## 8. Ten-Second Pitch
+
+Solana settles in ~400 ms slots; incumbent screening is a 150 ms REST round-trip or an
+HTTP WAF that never sees inside the transaction. **Aegis is a sovereign, sub-microsecond
+transaction firewall** that decodes every `sendTransaction` *before* the node does and
+blocks illicit or toxic traffic at wire speed — one Rust sidecar for Solana and EVM, with
+operator-owned, hot-reloadable policy and no central chokepoint.
+
+## 9. What Is Actually Working (verified)
+
+- **Inspection pipeline**: Solana v0/legacy parse + `eth_sendRawTransaction` sender
+  recovery, static list check, Extism Wasm rule engine — **~700 ns** Solana, **~26 µs** EVM
+  full pipeline (Criterion, reproducible).
+- **O(1) address screening**: a 50 000-entry list costs **~18 ns**, same as one entry.
+- **v0 Address Lookup Table resolution**: keys loaded through a LUT are screened like
+  static keys (bounded cache, refetch on index miss).
+- **Operator-owned feeds**: `THREAT_FEEDS` hot-reloaded with per-source attribution;
+  failing feeds keep their last good copy (never silently empty).
+- **SIGHUP hot reload** of the local list and Wasm plugin without dropping connections.
+- **60+ tests** (unit, integration, property/fuzz) green; `clippy -D warnings` and
+  `cargo fmt --check` clean.
+- **One command to demo**: `bash demo/rpc-demo.sh` (live RPC) or `docker compose up`
+  (self-contained local validator). See `DEMO.md`.
+
+## 10. Trade-offs and Honesty
+
+- **Fail open on parse errors, fail safe on feed errors.** An undecodable transaction is
+  forwarded (the downstream node uses the same decoder and rejects it); a feed outage
+  keeps the last good copy rather than emptying the list.
+- **A clean transaction needs a reachable downstream.** The allow path forwards the
+  transaction, so a read-only or unreachable RPC surfaces as a `502` — Aegis never
+  pretends to accept a transaction it could not deliver.
+- **Wasm rules cost ~1 ms**, deliberately excluded from the sub-µs claim; they are for
+  richer policy, not the hot path.
+- **LUT cache is best-effort** and bounded; a cache miss screens static keys only.
