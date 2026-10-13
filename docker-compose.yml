@@ -1,60 +1,58 @@
+# Aegis in Docker, chains on the host.
+#
+# Aegis fronts ONE upstream, so there is one instance per chain — the same image twice:
+#   aegis-sol  :8899 -> host anvil/validator? no: -> host solana-test-validator :8900
+#   aegis-evm  :8898 -> host anvil :8545
+#
+# Run the chains yourself on the host:
+#   solana-test-validator --reset --quiet --rpc-port 8900
+#   anvil --port 8545 --chain-id 31337
+#
+# Aegis reaches them through host.docker.internal. Both instances share the policy files
+# under demo/.run/ (mounted at /app/policy): edit them on the host and signal the
+# containers to reload — no restart.
+#
+#   docker compose up --build -d
+#   docker compose logs -f aegis-sol aegis-evm     # watch block/allow decisions
+#
+# The case scripts (demo/cases/*.sh) send transactions to :8899 / :8898.
 services:
-  validator:
-    image: solanalabs/solana:v1.18.26
-    # The Solana image is amd64-only; this pin makes the emulation explicit on arm64 hosts.
-    platform: linux/amd64
-    # Explicit, non-colliding ports: RPC 8899, pubsub 8901. The default pubsub port is
-    # 8900, so pinning --rpc-port to 8900 would clash and the RPC would not answer HTTP.
-    command: >
-      solana-test-validator
-      --rpc-port 8899
-      --rpc-pubsub-port 8901
-      --faucet-port 9900
-      --quiet
-    ports:
-      # Host 8900 -> container RPC 8899 (host 8899 is Aegis).
-      - "8900:8899"
-    healthcheck:
-      # The image ships no curl/wget and /bin/sh is dash, but bash exists, so probe with
-      # bash's /dev/tcp. JSON-RPC getHealth is the canonical readiness signal.
-      # `$$` escapes the `$` so Compose does not interpolate these shell variables.
-      test:
-        - CMD
-        - bash
-        - -c
-        - |
-          json='{"jsonrpc":"2.0","id":1,"method":"getHealth"}';
-          exec 3<>/dev/tcp/127.0.0.1/8899;
-          printf 'POST / HTTP/1.0\r\nContent-Type: application/json\r\nContent-Length: %s\r\n\r\n%s' "$${#json}" "$$json" >&3;
-          grep -q '"result":"ok"' <&3
-      interval: 5s
-      timeout: 3s
-      retries: 60
-      start_period: 180s
-
-  aegis:
+  aegis-sol:
     build: .
     environment:
       LISTEN_ADDR: "0.0.0.0:8899"
-      DOWNSTREAM_URL: "http://validator:8899"
-      BLOCKLIST_PATH: "/app/blocklist.txt"
-      # Sample Solana spam rule, so the stack can demo the Wasm layer too.
-      WASM_PLUGIN_PATH: "/app/plugins/zero-fee-filter.wasm"
+      DOWNSTREAM_URL: "http://host.docker.internal:8900"
+      BLOCKLIST_PATH: "/app/policy/blocklist.txt"
+      WASM_PLUGIN_PATH: "/app/policy/rule.wasm"
+      LOG_FORMAT: "pretty"
     ports:
       - "8899:8899"
     volumes:
-      - ./blocklist.txt:/app/blocklist.txt:ro
-      - ./plugins/zero-fee-filter.wasm:/app/plugins/zero-fee-filter.wasm:ro
-    depends_on:
-      validator:
-        condition: service_healthy
+      - ./demo/.run:/app/policy:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
-      # bash is present in the runtime image; /dev/tcp avoids needing curl.
-      test:
-        - CMD
-        - bash
-        - -c
-        - "exec 3<>/dev/tcp/127.0.0.1/8899; printf 'GET /metrics HTTP/1.0\\r\\n\\r\\n' >&3; grep -q aegis_blocklist_size <&3"
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8899; printf 'GET /metrics HTTP/1.0\\r\\n\\r\\n' >&3; grep -q aegis_blocklist_size <&3"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  aegis-evm:
+    build: .
+    environment:
+      LISTEN_ADDR: "0.0.0.0:8898"
+      DOWNSTREAM_URL: "http://host.docker.internal:8545"
+      BLOCKLIST_PATH: "/app/policy/blocklist.txt"
+      WASM_PLUGIN_PATH: "/app/policy/rule.wasm"
+      LOG_FORMAT: "pretty"
+    ports:
+      - "8898:8898"
+    volumes:
+      - ./demo/.run:/app/policy:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8898; printf 'GET /metrics HTTP/1.0\\r\\n\\r\\n' >&3; grep -q aegis_blocklist_size <&3"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -69,7 +67,8 @@ services:
     volumes:
       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on:
-      - aegis
+      - aegis-sol
+      - aegis-evm
 
   grafana:
     image: grafana/grafana:11.6.0

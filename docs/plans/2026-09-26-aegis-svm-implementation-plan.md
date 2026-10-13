@@ -286,8 +286,6 @@ aegis-svm/
 ├── Cargo.toml                          # workspace root
 ├── blocklist.txt                       # OFAC + exploiter pubkeys (one per line)
 ├── aegis.toml                          # default config
-├── CONTEXT.md
-├── ABOUT.md
 ├── crates/
 │   ├── aegis-core/
 │   │   ├── Cargo.toml

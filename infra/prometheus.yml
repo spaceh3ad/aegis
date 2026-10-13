@@ -3,7 +3,11 @@ global:
   evaluation_interval: 5s
 
 scrape_configs:
-  - job_name: aegis
+  - job_name: aegis-sol
     static_configs:
-      - targets: ["aegis:8899"]
+      - targets: ["aegis-sol:8899"]
+    metrics_path: /metrics
+  - job_name: aegis-evm
+    static_configs:
+      - targets: ["aegis-evm:8898"]
     metrics_path: /metrics

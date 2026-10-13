@@ -134,110 +134,92 @@ reach: the clean-path check forwards the transaction downstream, so an unreachab
 read-only RPC turns a clean transaction into a `502`. Aegis never *pretends* to accept a
 transaction it could not have delivered.
 
-### Docker Compose — against a real RPC
+### Docker Compose — Aegis in Docker, chains on the host
 
-No local validator, no emulation. Runs Aegis in front of any Solana RPC (Helius,
-Triton, public cluster):
+`docker compose up` runs **Aegis only** (two instances of the same image) plus Prometheus and
+Grafana. The chains run natively on your host — a real arm64 `solana-test-validator` and
+`anvil`, no emulation — and Aegis reaches them through `host.docker.internal`:
 
-```bash
-# Public testnet:
-docker compose -f docker-compose.rpc.yml up --build
-
-# Helius testnet (key in the URL):
-AEGIS_RPC_URL="https://testnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" \
-  docker compose -f docker-compose.rpc.yml up --build
-
-AEGIS_PROXY_URL=http://127.0.0.1:8899 bash demo/demo.sh
-```
-
-### Docker Compose — full local stack (self-contained, offline)
+| Container | Port | Upstream (host) |
+|---|---|---|
+| `aegis-sol` | `:8899` | `solana-test-validator` `:8900` |
+| `aegis-evm` | `:8898` | `anvil` `:8545` |
+| `prometheus` | `:9090` | scrapes both Aegis instances |
+| `grafana` | `:3001` | dashboard uid `aegis-svm-v1` |
 
 ```bash
-docker compose up --build
-bash demo/demo.sh
+# start the chains yourself (two terminals), then Aegis:
+solana-test-validator --reset --quiet --rpc-port 8900
+anvil --port 8545 --chain-id 31337
+docker compose up -d --build
 ```
 
-Aegis `:8899`, `solana-test-validator` (host `:8900`), Prometheus `:9090`, Grafana
-`http://localhost:3001` (dashboard uid `aegis-svm-v1`). The validator image is `linux/amd64`;
-on Apple silicon it runs under emulation, so first start can take a few minutes. Only the
-Docker stacks include Grafana.
-
-### Demo script
-
-One script, three modes. Point it at **any** RPC via `AEGIS_RPC_URL` / `HELIUS_API_KEY` — only
-the URL changes; no Docker needed.
+Policy lives in `demo/.run/` (mounted into both containers at `/app/policy`). Aegis reloads it
+on `SIGHUP` — no restart:
 
 ```bash
-cargo build --release -p aegis-proxy
-
-bash demo/demo.sh                                   # full story vs public devnet (pass/fail gate)
-AEGIS_RPC_URL="https://devnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" bash demo/demo.sh
-SPAM=500 bash demo/demo.sh                          # bigger spam burst (SPAM=0 to skip)
-WALLET=1 bash demo/demo.sh                           # interactive: point a wallet here
-PROXY=http://127.0.0.1:8899 bash demo/demo.sh        # target a running proxy (e.g. the Compose stack)
+# edit demo/.run/blocklist.txt or demo/.run/rule.wasm, then:
+docker kill -s HUP $(docker compose ps -q aegis-sol) $(docker compose ps -q aegis-evm)
 ```
 
-Automated beats: live reads pass through → blocklisted signer rejected → clean tx forwarded →
-`SIGHUP` hot-reload flips a live tx allowed→blocked → Wasm spam rule drops a high-CU zero-fee
-tx → spam **burst** (N blocked, 0 forwarded, compute never reserved) → cross-chain rule
-hot-swap (`approve()` blocked, `transfer()` passes). Exit code is 0 only if every beat verified.
-
-#### Wallet demo (`WALLET=1`)
-
-A wallet broadcasts through the RPC configured for its network — not the dApp's provider. So
-Aegis goes in the middle by **being the wallet's RPC endpoint**, exactly as a WAF replaces an
-origin URL. Point the wallet at Aegis, send to a blocklisted address, and it is refused at the
-edge; the transaction never reaches the chain.
+Watch the block/allow decisions — one line per screened transaction:
 
 ```bash
-WALLET=1 bash demo/demo.sh                       # Solana Devnet (Phantom)
-CHAIN=base WALLET=1 bash demo/demo.sh            # Base Sepolia (Phantom/MetaMask EVM)
+docker compose logs -f aegis-sol aegis-evm
 ```
-
-Phantom: **Settings → Developer Settings → enable testnet** → set the Solana Devnet RPC URL to
-`http://127.0.0.1:8899`. MetaMask: **Settings → Networks → Base Sepolia → RPC URL** = the
-printed URL. localhost is fine; `TUNNEL=1` adds a cloudflared `https` URL only if a wallet
-rejects a non-https endpoint. One run fronts one upstream chain.
-
-> MetaMask estimates gas via the same RPC before sending, so it shows a *gas-estimation* error
-> rather than the raw JSON-RPC text. The rejection is still Aegis — watch the terminal log.
-
-> Aegis rejections are identified by `error.data.rule_id` (present on its own rejections, absent
-> on downstream node errors). JSON-RPC codes alone can collide with the chain — e.g. Solana
-> itself returns `-32002` for a failed transaction simulation.
-
-### Case-based demo (two terminals)
-
-A scripted equivalent of the six cases, run side by side: **terminal 2** shows Aegis screening
-live, **terminal 1** drives each case. No Docker; uses a local validator and `anvil`.
-
-```bash
-# terminal 2 — the stack + live log you watch
-bash demo/proxy.sh
-
-# terminal 1 — one-time, then run any case
-bash demo/cases/setup.sh        # keys, LUT, Solana program, ERC-20 (needs solana + forge)
-bash demo/cases/blacklist.sh    # list block + LUT-delivered sanction
-bash demo/cases/spam.sh         # SPAM=100  zero-fee, high-CU burst
-bash demo/cases/evm-approval.sh # approve()/increaseAllowance() refused
-bash demo/cases/cross-chain.sh  # hot-swap the rule live: Solana spam -> EVM guard
-bash demo/cases/silent-drop.sh  # HTTP 204: silent drop vs a visible block
-bash demo/cases/program-selector.sh  # deny by program id / method selector
-```
-
-`proxy.sh` runs the release binary twice — `aegis(sol)` `:8899` → validator, `aegis(evm)`
-`:8898` → anvil — with `LOG_FORMAT=pretty`, and tails the log so you can watch:
 
 ```
 WARN BLOCKED rule=blocklist:file tx=svm target=- signer=<pk> what=cu=0 fee=0
 INFO allowed tx=evm target=0xe7f1… signer=0xf39f… what=selector=0xa9059cbb
 WARN DROPPED tx=svm target=Tokenkeg… what=cu=0 fee=0
-INFO wasm plugin reloaded plugin=demo/.run/rule.wasm
+INFO wasm plugin reloaded plugin=/app/policy/rule.wasm
 ```
 
-`setup.sh` creates the fixtures the cases need (an Address Lookup Table holding the sanctioned
-address, a Solana `payments-program`, an ERC-20 `DemoToken`) and records their addresses in
+### The demo cases
+
+With the stack above running, each case is one command that sends transactions and reports the
+verdict; you watch the decisions in `docker compose logs`. `setup.sh` (run once) funds two
+accounts, creates an Address Lookup Table holding the sanctioned address, deploys a Solana
+`payments-program`, and deploys an ERC-20 to `anvil` — recording each address under
 `demo/.run/` (gitignored).
+
+```bash
+bash demo/cases/setup.sh             # one-time; needs solana, forge, python3 (base58, eth_account)
+
+bash demo/cases/blacklist.sh         # list block + LUT-delivered sanction
+bash demo/cases/spam.sh              # SPAM=100  zero-fee, high-CU burst
+bash demo/cases/evm-approval.sh      # approve() / increaseAllowance() refused
+bash demo/cases/cross-chain.sh       # hot-swap the rule live: Solana spam -> EVM guard
+bash demo/cases/silent-drop.sh       # HTTP 204: silent drop vs a visible block
+bash demo/cases/program-selector.sh  # deny by program id / method selector
+```
+
+Each script changes the live policy by overwriting `demo/.run/` and signalling the containers,
+so the hot-reload is real (no restarts).
+
+> Aegis rejections are identified by `error.data.rule_id` (present on its own rejections, absent
+> on downstream node errors). JSON-RPC codes alone can collide with the chain — e.g. Solana
+> itself returns `-32002` for a failed transaction simulation.
+
+### All-in-one script (no Docker, any RPC)
+
+`demo/demo.sh` is a single script for a quick end-to-end pass without Docker. It boots its own
+proxy in front of **any** Solana RPC (`AEGIS_RPC_URL` / `HELIUS_API_KEY`) and runs the beats
+with a pass/fail gate. Its `WALLET=1` mode points a real wallet at Aegis.
+
+```bash
+bash demo/demo.sh                                    # full story vs public devnet
+AEGIS_RPC_URL="https://devnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" bash demo/demo.sh
+SPAM=500 bash demo/demo.sh                           # bigger spam burst
+WALLET=1 bash demo/demo.sh                           # point Phantom/MetaMask at Aegis
+```
+
+A wallet broadcasts through the RPC configured for its network — not the dApp's provider — so
+Aegis goes in the middle by **being the wallet's RPC endpoint**, the way a WAF replaces an
+origin URL. Phantom: **Settings → Developer Settings → enable testnet** → Solana Devnet RPC URL
+= `http://127.0.0.1:8899`. MetaMask: **Settings → Networks → Base Sepolia → RPC URL** = the
+printed URL. localhost is fine. A real wallet can only drive the blocklist case — it will not
+set ComputeBudget fields or sign raw approvals, so spam and EVM approval stay CLI.
 
 ---
 
@@ -339,7 +321,9 @@ plugins/
   *.wasm                 pre-built plugins
 infra/                   Prometheus + Grafana provisioning
 demo/
-  demo.sh                one script, three modes (story / wallet / external proxy)
+  demo.sh                all-in-one script (no Docker, any RPC, pass/fail gate)
+  cases/                 the six case scripts (Docker-Aegis + host chains)
+  fixtures/              Solana payments-program + ERC-20 DemoToken
 ```
 
 ## Known limitations

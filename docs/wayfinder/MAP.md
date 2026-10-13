@@ -9,7 +9,6 @@ A fully-specified, task-level implementation plan for Aegis-SVM ready to execute
 ## Notes
 
 - Domain: Rust reverse proxy for Solana JSON-RPC, sub-50µs latency target
-- Consult CONTEXT.md for canonical terms
 - Skills per session: grilling, domain-modeling, research
 - Stack: Tokio + axum + solana-sdk + ahash + prometheus + extism (Wasm, stretch)
 - Demo: Docker Compose (aegis + solana-test-validator + prometheus + grafana), one-command startup
