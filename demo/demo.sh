@@ -49,6 +49,7 @@ banner(){ echo -e "\n${B}${C}━━━ $* ━━━${X}"; }
 ok(){     echo -e "  ${G}✓${X} $*"; }
 bad(){    echo -e "  ${R}✗${X} $*"; }
 info(){   echo -e "  ${Y}•${X} $*"; }
+trace(){  echo -e "  ${C}→${X} $*" >&2; }
 blocked(){ echo -e "  ${R}[BLOCKED @ PROXY]${X} $*"; }
 pause(){ if [ "${INTERACTIVE:-0}" = "1" ]; then echo -e "  ${M}▸ press enter${X}"; read -r _; fi; }
 
@@ -121,8 +122,9 @@ PY
 }
 b58(){ "$PY" "$B58" enc "$1"; }
 len_list(){ grep -v '^[[:space:]]*#' "$BL" 2>/dev/null | grep -cv '^[[:space:]]*$'; }
-send_tx(){ # $1 method, $2 param, $3 extra-json, $4 proxy(optional) -> "code rule"
+send_tx(){ # $1 method, $2 param, $3 extra-json, $4 proxy(optional), $5 label(optional) -> "code rule"
   local p="${4:-$PROXY}"
+  [ -n "${5:-}" ] && trace "$1  $5" || trace "$1"
   curl -s -m 8 -X POST "$p" -H 'content-type: application/json' \
     -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$1\",\"params\":[\"$2\"$3]}" \
   | python3 -c "import sys,json
@@ -171,6 +173,7 @@ fi
 # ═══ BEAT 1 — live reads pass through ═══════════════════════════════════════
 banner "BEAT 1 — Real chain data flows through untouched"
 for m in getVersion getHealth getSlot; do
+    trace "$m  (read — should pass through)"
     r=$(curl -s -m 10 -X POST "$PROXY" -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$m\"}")
     if echo "$r" | grep -q '"result"'; then ok "$m → $(echo "$r" | python3 -c 'import sys,json;print(json.dumps(json.load(sys.stdin)["result"])[:64])' 2>/dev/null)"; PASS=$((PASS+1)); else bad "$m → $r"; FAIL=$((FAIL+1)); fi
 done
@@ -179,7 +182,7 @@ pause
 
 # ═══ BEAT 2 — static list block ═════════════════════════════════════════════
 banner "BEAT 2 — Blocklisted signer rejected before the RPC sees it"
-read -r c r < <(send_tx sendTransaction "$(sol_tx "$BLOCK_HEX")" ',{"encoding":"base64"}')
+read -r c r < <(send_tx sendTransaction "$(sol_tx "$BLOCK_HEX")" ',{"encoding":"base64"}' "" "signed by a listed address")
 expect_blocked "$c" "$r" "sendTransaction signed by a listed address"
 info "Rejection is local: parse → O(1) lookup → JSON-RPC error. The tx never leaves the box."
 pause
@@ -187,7 +190,7 @@ pause
 # ═══ BEAT 3 — clean passthrough ═════════════════════════════════════════════
 banner "BEAT 3 — A clean transaction is forwarded"
 CLEAN=$(python3 -c "import os;print(os.urandom(32).hex())")
-read -r c r < <(send_tx sendTransaction "$(sol_tx "$CLEAN")" ',{"encoding":"base64"}')
+read -r c r < <(send_tx sendTransaction "$(sol_tx "$CLEAN")" ',{"encoding":"base64"}' "" "unlisted signer (random key)")
 expect_allowed "$c" "$r" "unlisted signer"
 pause
 
@@ -201,12 +204,12 @@ fi
 if [ -z "$EXTERNAL" ]; then
 banner "BEAT 4 — New threat intel live in <1s, no restart"
 NEWKEY=$(python3 -c "import os;print(os.urandom(32).hex())")
-read -r c r < <(send_tx sendTransaction "$(sol_tx "$NEWKEY")" ',{"encoding":"base64"}')
+read -r c r < <(send_tx sendTransaction "$(sol_tx "$NEWKEY")" ',{"encoding":"base64"}' "" "fresh unlisted signer (before listing)")
 info "Before: a fresh, unlisted signer ..."
 expect_allowed "$c" "$r" "  (sent before it was listed)"
 echo "$(b58 "$NEWKEY")" >> "$BL"; kill -HUP "$PID"; sleep 0.6
 info "  → appended to blocklist.txt and sent SIGHUP"
-read -r c r < <(send_tx sendTransaction "$(sol_tx "$NEWKEY")" ',{"encoding":"base64"}')
+read -r c r < <(send_tx sendTransaction "$(sol_tx "$NEWKEY")" ',{"encoding":"base64"}' "" "same signer, after SIGHUP reload")
 expect_blocked "$c" "$r" "same transaction, after hot reload"
 ok "list is now $(len_list) entries — swapped atomically, zero dropped connections"
 pause
@@ -214,7 +217,7 @@ fi
 
 # ═══ BEAT 5 — Wasm rule (Solana) ════════════════════════════════════════════
 banner "BEAT 5 — Programmable policy: Solana spam filter (Wasm)"
-read -r c r < <(send_tx sendTransaction "$(cu_tx)" ',{"encoding":"base64"}')
+read -r c r < <(send_tx sendTransaction "$(cu_tx)" ',{"encoding":"base64"}' "" "500k CU, zero priority fee")
 expect_blocked "$c" "$r" "500k-CU transaction, zero priority fee"
 info "Rule: cu_requested > 400k AND priority_fee == 0  → drop spam before it burns a slot."
 pause
@@ -258,9 +261,9 @@ if [ -z "$EXTERNAL" ]; then
 banner "BEAT 7 — Swap the rule to an EVM guard, live"
 info "replacing the Wasm rule with approve-guard, then SIGHUP (no restart)..."
 cp "$APG" "$RULE"; kill -HUP "$PID"; sleep 0.6
-read -r c r < <(send_tx eth_sendRawTransaction "$(evm_tx 095ea7b3 0)" "")
+read -r c r < <(send_tx eth_sendRawTransaction "$(evm_tx 095ea7b3 0)" "" "" "approve(address,uint256)  selector 095ea7b3")
 expect_blocked "$c" "$r" "ERC-20 approve(address,uint256)"
-read -r c r < <(send_tx eth_sendRawTransaction "$(evm_tx a9059cbb 1)" "")
+read -r c r < <(send_tx eth_sendRawTransaction "$(evm_tx a9059cbb 1)" "" "" "transfer(address,uint256)  selector a9059cbb")
 expect_allowed "$c" "$r" "ERC-20 transfer(address,uint256)"
 info "Same process, same port — a Solana spam filter became an EVM approval guard."
 info "(EVM selector screening shown here; full EVM delivery is covered by the integration tests.)"

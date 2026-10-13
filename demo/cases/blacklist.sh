@@ -9,13 +9,13 @@ SAN_HEX=$(python3 "$B58" "$SAN")
 reset_blocklist
 
 say "clean recipient (not listed)"
-read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" simple "$SAN_HEX")"); report_allow "$rule"
+read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" simple "$SAN_HEX")" "transfer to $SAN (not in list)"); report_allow "$rule"
 
 say "add recipient to the list + hot-reload"
 use_blocklist "$SAN"; note "SIGHUP sent"
 
 say "same recipient, now listed"
-read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" simple "$SAN_HEX")"); report_block "$rule"
+read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" simple "$SAN_HEX")" "transfer to $SAN (now listed)"); report_block "$rule"
 
 say "sanction delivered only via the lookup table (not a static key)"
-read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" lut "$PAY" "$LUT")"); report_block "$rule"
+read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" lut "$PAY" "$LUT")" "transfer to $SAN, address resolved from LUT $LUT" ); report_block "$rule"

@@ -7,10 +7,10 @@ say "load approval guard"
 set_rule approve-guard
 
 say "transfer() — allowed"
-read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transfer "$TOKEN" "$TO" 1 "$(evm_nonce)")"); report_allow "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transfer "$TOKEN" "$TO" 1 "$(evm_nonce)")" "transfer($TO, 1)  selector a9059cbb"); report_allow "$rule"
 
 say "approve(spender, MAX_UINT) — blocked"
-read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" approve "$TOKEN" "$SPENDER" max "$(evm_nonce)")"); report_block "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" approve "$TOKEN" "$SPENDER" max "$(evm_nonce)")" "approve($SPENDER, MAX_UINT)  selector 095ea7b3"); report_block "$rule"
 
 say "increaseAllowance() — blocked"
-read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" raw "$TOKEN" 39509351 "$(evm_nonce)")"); report_block "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" raw "$TOKEN" 39509351 "$(evm_nonce)")" "increaseAllowance()  selector 39509351"); report_block "$rule"

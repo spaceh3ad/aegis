@@ -43,6 +43,8 @@ say(){  echo -e "${B}$*${X}"; }
 ok(){   echo -e "  ${G}✓${X} $*"; }
 warn(){ echo -e "  ${R}!${X} $*"; }
 note(){ echo -e "  ${Y}·${X} $*"; }
+# Request trace, to stderr so it survives the `read < <(send_*)` command substitutions.
+trace(){ echo -e "  ${C}→${X} $*" >&2; }
 
 # ── policy control: overwrite files, then SIGHUP the containers ──────────────
 # Requires the stack to be up (`docker compose up -d`). Falls back to pkill for a local run.
@@ -72,13 +74,16 @@ require_aegis(){
 rpc(){ curl -s -m 10 -X POST "$1" -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":$3}"; }
 rpc_status(){ curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$1" -H 'content-type: application/json' -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"$2\",\"params\":$3}"; }
 
-# Send a tx; print "<http> <rule_id|->". rule_id present == Aegis blocked it.
-send_sol(){ rpc "$PROXY_SOL" sendTransaction "[\"$1\",{\"encoding\":\"base64\"}]" \
+# Send a tx; print "<code> <rule_id|->". rule_id present == Aegis blocked it.
+# Optional $2 is a human label, traced to stderr (survives the caller's command substitution).
+send_sol(){ [ -n "${2:-}" ] && trace "sendTransaction  $2"
+  rpc "$PROXY_SOL" sendTransaction "[\"$1\",{\"encoding\":\"base64\"}]" \
   | python3 -c "import sys,json
 d=json.load(sys.stdin); e=d.get('error') or {}
 print(e.get('code','ok'), (e.get('data') or {}).get('rule_id') or '-')" 2>/dev/null; }
 
-send_evm(){ rpc "$PROXY_EVM" eth_sendRawTransaction "[\"$1\"]" \
+send_evm(){ [ -n "${2:-}" ] && trace "eth_sendRawTransaction  $2"
+  rpc "$PROXY_EVM" eth_sendRawTransaction "[\"$1\"]" \
   | python3 -c "import sys,json
 d=json.load(sys.stdin); e=d.get('error') or {}
 print(e.get('code','ok'), (e.get('data') or {}).get('rule_id') or '-')" 2>/dev/null; }

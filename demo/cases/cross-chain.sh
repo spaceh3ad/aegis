@@ -7,16 +7,16 @@ say "both proxies load the Solana spam rule"
 set_rule zero-fee-filter
 
 say "solana spam — blocked"
-read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" spam 500000 0)"); report_block "$rule"
+read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" spam 500000 0)" "SVM 500k CU, fee 0"); report_block "$rule"
 
 say "evm approve — not yet blocked (rule is Solana-scoped)"
-read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" approve "$TOKEN" "$SPENDER" max "$(evm_nonce)")"); report_allow "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" approve "$TOKEN" "$SPENDER" max "$(evm_nonce)")" "EVM approve(MAX_UINT)"); report_allow "$rule"
 
 say "hot-swap the rule to approve-guard + SIGHUP (no restart)"
 set_rule approve-guard; note "SIGHUP sent"
 
 say "evm approve — now blocked, same running process"
-read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" approve "$TOKEN" "$SPENDER" max "$(evm_nonce)")"); report_block "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" approve "$TOKEN" "$SPENDER" max "$(evm_nonce)")" "EVM approve(MAX_UINT)"); report_block "$rule"
 
 say "solana spam — now ignored (policy is per-deployment)"
-read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" spam 500000 0)"); report_allow "$rule"
+read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" spam 500000 0)" "SVM 500k CU, fee 0"); report_allow "$rule"

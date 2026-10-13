@@ -7,13 +7,13 @@ say "load program-guard (SVM: SPL Token program; EVM: selector 0x23b872dd)"
 set_rule program-guard
 
 say "evm transfer() — allowed"
-read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transfer "$TOKEN" "$TO" 1 "$(evm_nonce)")"); report_allow "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transfer "$TOKEN" "$TO" 1 "$(evm_nonce)")" "transfer()  selector a9059cbb"); report_allow "$rule"
 
 say "evm transferFrom() — blocked by selector"
-read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transferfrom "$TOKEN" "$EVM_FROM" "$TO" 1 "$(evm_nonce)")"); report_block "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transferfrom "$TOKEN" "$EVM_FROM" "$TO" 1 "$(evm_nonce)")" "transferFrom()  selector 23b872dd"); report_block "$rule"
 
 say "svm: invoking the SPL Token program — blocked"
-read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA)"); report_block "$rule"
+read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA)" "invokes SPL Token program"); report_block "$rule"
 
 say "svm: invoking your own program — allowed"
-read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" program "$PAY")"); report_allow "$rule"
+read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" program "$PAY")" "invokes $PAY (unwatched)"); report_allow "$rule"

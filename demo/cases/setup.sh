@@ -46,6 +46,7 @@ USER_PK=$(solana-keygen pubkey "$RUN/user.json"); SAN_PK=$(solana-keygen pubkey 
 echo "$USER_PK" > "$RUN/user.pub"; echo "$SAN_PK" > "$RUN/sanctioned.pub"
 solana airdrop 5 "$USER_PK" --url "$VALIDATOR" >/dev/null 2>&1
 solana airdrop 5 "$SAN_PK"  --url "$VALIDATOR" >/dev/null 2>&1
+trace "airdrop 5 SOL each → $USER_PK , $SAN_PK"
 ok "funded user $USER_PK  sanctioned $SAN_PK"
 
 # A validator --reset wipes accounts, so verify artifacts still exist before reusing them.
@@ -67,6 +68,7 @@ evm_code_exists(){ # $1 = 0x address -> 0 if contract code exists on anvil
 if [ -f "$RUN/lut.txt" ] && sol_exists "$(cat "$RUN/lut.txt")"; then
   LUT=$(cat "$RUN/lut.txt")
 else
+  trace "address-lookup-table create + extend with $SAN_PK"
   LUT=$(solana address-lookup-table create --authority "$RUN/user.json" --url "$VALIDATOR" | awk '/Lookup Table Address/{print $NF}')
   echo "$LUT" > "$RUN/lut.txt"
 fi
@@ -76,6 +78,7 @@ ok "lookup table $LUT (contains the sanctioned address)"
 if [ -f "$RUN/payprog.txt" ] && sol_exists "$(cat "$RUN/payprog.txt")"; then
   ok "program $(cat "$RUN/payprog.txt")"
 else
+  trace "cargo-build-sbf + solana program deploy"
   (cd "$FIX/solana/payments-program" && cargo-build-sbf --sbf-out-dir "$RUN/sbf" >/dev/null 2>&1) || { warn "cargo-build-sbf failed"; exit 1; }
   [ -f "$RUN/payprog-keypair.json" ] || solana-keygen new --no-bip39-passphrase -s -o "$RUN/payprog-keypair.json" >/dev/null 2>&1
   solana program deploy --program-id "$RUN/payprog-keypair.json" "$RUN/sbf/payments_program.so" --url "$VALIDATOR" >/dev/null 2>&1 || { warn "program deploy failed"; exit 1; }
@@ -86,6 +89,7 @@ fi
 if [ -f "$RUN/erc20.txt" ] && evm_code_exists "$(cat "$RUN/erc20.txt")"; then
   ok "erc20 $(cat "$RUN/erc20.txt")"
 else
+  trace "forge create DemoToken on anvil"
   OUT=$(cd "$FIX/erc20" && forge create --rpc-url "$ANVIL" --private-key "$EVM_KEY" --broadcast \
         src/DemoToken.sol:DemoToken --constructor-args 1000000000000000000000000 2>&1)
   ADDR=$(echo "$OUT" | awk '/Deployed to/{print $NF}')

@@ -178,10 +178,11 @@ INFO wasm plugin reloaded plugin=/app/policy/rule.wasm
 ### The demo cases
 
 With the stack above running, each case is one command that sends transactions and reports the
-verdict; you watch the decisions in `docker compose logs`. `setup.sh` (run once) funds two
-accounts, creates an Address Lookup Table holding the sanctioned address, deploys a Solana
-`payments-program`, and deploys an ERC-20 to `anvil` — recording each address under
-`demo/.run/` (gitignored).
+verdict; you watch the decisions in `docker compose logs`. Each case also prints a `→` trace of the
+request it is about to send (method + what it carries), so you can see the intent, not just the
+outcome. `setup.sh` (run once) funds two accounts, creates an Address Lookup Table holding the
+sanctioned address, deploys a Solana `payments-program`, and deploys an ERC-20 to `anvil` —
+recording each address under `demo/.run/` (gitignored).
 
 ```bash
 bash demo/cases/setup.sh             # one-time; needs solana, forge, python3 (base58, eth_account)
