@@ -16,6 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CASES="$ROOT/demo/cases"
 FIX="$ROOT/demo/fixtures"
 RUN="$ROOT/demo/.run"
+B58="$ROOT/demo/b58.py"   # vendored pure-Python base58 (no third-party deps)
 
 # Aegis (Docker) endpoints the scripts talk to.
 PROXY_SOL="${AEGIS_SOL_PROXY:-http://127.0.0.1:8899}"

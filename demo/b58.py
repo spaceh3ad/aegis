@@ -2,6 +2,11 @@
 
 So the demo's transaction builders run on ANY python3, regardless of which interpreter is
 active or what is installed.
+
+Importable (`import b58; b58.b58decode(...)`) and runnable:
+
+    python3 demo/b58.py dec <base58>   # -> hex
+    python3 demo/b58.py enc <hex>      # -> base58
 """
 
 _ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
@@ -31,7 +36,8 @@ def b58encode(b: bytes) -> str:
 
 
 if __name__ == "__main__":
-    # CLI: decode a base58 argument to hex, for the shell case scripts.
+    # CLI for the shell demo scripts. `dec` (default, for back-compat) -> hex; `enc` -> base58.
     import sys
 
-    print(b58decode(sys.argv[1]).hex())
+    mode, val = (sys.argv[1], sys.argv[2]) if len(sys.argv) > 2 else ("dec", sys.argv[1])
+    print(b58encode(bytes.fromhex(val)) if mode == "enc" else b58decode(val).hex())

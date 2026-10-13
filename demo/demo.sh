@@ -28,6 +28,16 @@ elif [ -n "${HELIUS_API_KEY:-}" ]; then RPC="https://testnet.helius-rpc.com/?api
 else RPC="https://api.devnet.solana.com"; fi
 
 BIN="$ROOT/target/release/aegis-proxy"
+B58="$ROOT/demo/b58.py"   # vendored pure-Python base58; no third-party dependency
+# python3 for the demo: prefer one with eth_account (EVM signing), else plain python3.
+# txbuild/base58 work on any interpreter now that base58 is vendored.
+PY="${AEGIS_PYTHON:-}"
+if [ -z "$PY" ]; then
+    for cand in python3 /opt/anaconda3/bin/python3 /opt/homebrew/bin/python3; do
+        if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import eth_account' >/dev/null 2>&1; then PY="$cand"; break; fi
+    done
+    [ -z "$PY" ] && PY=python3
+fi
 WORK="$(mktemp -d)"
 BL="$WORK/blocklist.txt"
 RULE="$WORK/rule.wasm"
@@ -81,9 +91,11 @@ print(base64.b64encode(tx).decode())
 PY
 }
 cu_tx(){ # Solana tx: 500k CU, zero price -> spam
-python3 - <<'PY'
-import base64, base58
-cb=base58.b58decode("ComputeBudget111111111111111111111111111111")
+"$PY" - "$B58" <<'PY'
+import sys, base64
+sys.path.insert(0, sys.argv[1].rsplit("/",1)[0])
+import b58
+cb=b58.b58decode("ComputeBudget111111111111111111111111111111")
 def u16(n):
     o=bytearray()
     while True:
@@ -98,7 +110,7 @@ print(base64.b64encode(u16(1)+bytes(64)+msg).decode())
 PY
 }
 evm_tx(){ # $1 selector hex, $2 nonce
-python3 - "$1" "$2" <<'PY'
+"$PY" - "$1" "$2" <<'PY'
 import sys
 from eth_account import Account
 acct=Account.from_key("0x"+"11"*32)
@@ -107,7 +119,7 @@ tx={"nonce":int(sys.argv[2]),"gasPrice":10**9,"gas":60000,"to":"0x"+"22"*20,"val
 print(acct.sign_transaction(tx).rawTransaction.hex())
 PY
 }
-b58(){ python3 -c "import base58;print(base58.b58encode(bytes.fromhex('$1')).decode())"; }
+b58(){ "$PY" "$B58" enc "$1"; }
 len_list(){ grep -v '^[[:space:]]*#' "$BL" 2>/dev/null | grep -cv '^[[:space:]]*$'; }
 send_tx(){ # $1 method, $2 param, $3 extra-json, $4 proxy(optional) -> "code rule"
   local p="${4:-$PROXY}"
@@ -119,7 +131,7 @@ print(e.get('code','none'), (e.get('data') or {}).get('rule_id',''))"
 }
 
 BLOCKED_KEY="CVC5aBX8ckVF2ByAKRXjg9gPMqYNNCSBFkSRuGvxLbzv"
-BLOCK_HEX="$(python3 -c "import base58;print(base58.b58decode('$BLOCKED_KEY').hex())")"
+BLOCK_HEX="$(python3 "$B58" "$BLOCKED_KEY")"
 
 echo -e "\n${B}${M}AEGIS${X} ${B}— a programmable, wire-speed transaction firewall for RPC infrastructure${X}"
 info "endpoint : $RPC"
@@ -210,9 +222,11 @@ pause
 # ═══ BEAT 6 — spam burst (volume) ═══════════════════════════════════════════
 if [ "$SPAM" -gt 0 ]; then
     banner "BEAT 6 — Spam is a volume problem ($SPAM txs)"
-    STX="$(cu_tx)"; LTX="$(python3 - <<'PY'
-import base64, base58
-cb=base58.b58decode("ComputeBudget111111111111111111111111111111")
+    STX="$(cu_tx)"; LTX="$("$PY" - "$B58" <<'PY'
+import sys, base64
+sys.path.insert(0, sys.argv[1].rsplit("/",1)[0])
+import b58
+cb=b58.b58decode("ComputeBudget111111111111111111111111111111")
 def u16(n):
     o=bytearray()
     while True:

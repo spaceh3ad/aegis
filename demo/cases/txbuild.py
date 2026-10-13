@@ -11,10 +11,10 @@ import base64
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # demo/
 import b58
 
-base58 = b58  # local vendored module; no third-party dependency
+base58 = b58  # vendored pure-Python base58; no third-party dependency
 
 
 def u16(n: int) -> bytes:
