@@ -14,3 +14,6 @@ __pycache__/
 .env
 *.log
 RECORDING.md
+
+# Local planning artifacts (agent scaffolding); not part of the submission
+docs/
