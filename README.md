@@ -206,6 +206,39 @@ rejects a non-https endpoint. One run fronts one upstream chain.
 > on downstream node errors). JSON-RPC codes alone can collide with the chain — e.g. Solana
 > itself returns `-32002` for a failed transaction simulation.
 
+### Case-based demo (two terminals)
+
+A scripted equivalent of the six cases, run side by side: **terminal 2** shows Aegis screening
+live, **terminal 1** drives each case. No Docker; uses a local validator and `anvil`.
+
+```bash
+# terminal 2 — the stack + live log you watch
+bash demo/proxy.sh
+
+# terminal 1 — one-time, then run any case
+bash demo/cases/setup.sh        # keys, LUT, Solana program, ERC-20 (needs solana + forge)
+bash demo/cases/blacklist.sh    # list block + LUT-delivered sanction
+bash demo/cases/spam.sh         # SPAM=100  zero-fee, high-CU burst
+bash demo/cases/evm-approval.sh # approve()/increaseAllowance() refused
+bash demo/cases/cross-chain.sh  # hot-swap the rule live: Solana spam -> EVM guard
+bash demo/cases/silent-drop.sh  # HTTP 204: silent drop vs a visible block
+bash demo/cases/program-selector.sh  # deny by program id / method selector
+```
+
+`proxy.sh` runs the release binary twice — `aegis(sol)` `:8899` → validator, `aegis(evm)`
+`:8898` → anvil — with `LOG_FORMAT=pretty`, and tails the log so you can watch:
+
+```
+WARN BLOCKED rule=blocklist:file tx=svm target=- signer=<pk> what=cu=0 fee=0
+INFO allowed tx=evm target=0xe7f1… signer=0xf39f… what=selector=0xa9059cbb
+WARN DROPPED tx=svm target=Tokenkeg… what=cu=0 fee=0
+INFO wasm plugin reloaded plugin=demo/.run/rule.wasm
+```
+
+`setup.sh` creates the fixtures the cases need (an Address Lookup Table holding the sanctioned
+address, a Solana `payments-program`, an ERC-20 `DemoToken`) and records their addresses in
+`demo/.run/` (gitignored).
+
 ---
 
 ## Configuration
@@ -248,14 +281,16 @@ Rules are ordinary Rust (or any Extism-supported language) compiled to `wasm32-w
 
 The rule returns `{"verdict": "allow" | "block" | "drop", "rule_id": "...", "message": "..."}`.
 
-### Two worked examples ship in `plugins/`
+### Four worked examples ship in `plugins/`
 
 | Plugin | Chain | Blocks | `rule_id` |
 |---|---|---|---|
 | `zero-fee-filter` | Solana | transactions requesting >400k CU with zero priority fee (spam) | `zero-fee-spam` |
 | `approve-guard` | EVM | ERC-20 `approve` / `increaseAllowance` calls (drainer entry point) | `approve-guard` |
+| `program-guard` | both | SVM: a denylisted program id; EVM: a denylisted method selector | `program-guard` |
+| `silent-drop` | both | returns `drop` (HTTP 204) instead of a visible rejection | `silent-drop` |
 
-Build either one and point Aegis at it:
+Build any of them and point Aegis at it:
 
 ```bash
 cd plugins/approve-guard
@@ -299,6 +334,8 @@ crates/
 plugins/
   zero-fee-filter/       sample Wasm rule (Rust guest, Solana)
   approve-guard/         sample Wasm rule (Rust guest, EVM approvals)
+  program-guard/         sample Wasm rule (block by program id / selector)
+  silent-drop/           sample Wasm rule (HTTP 204 silent drop)
   *.wasm                 pre-built plugins
 infra/                   Prometheus + Grafana provisioning
 demo/

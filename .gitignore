@@ -6,6 +6,8 @@
 /demo/fixtures/erc20/out/
 /demo/fixtures/erc20/cache/
 /demo/.run/
+/test-ledger/
+__pycache__/
 *.wasm
 !plugins/zero-fee-filter.wasm
 !plugins/approve-guard.wasm
