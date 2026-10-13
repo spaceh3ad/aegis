@@ -38,10 +38,13 @@ services:
       LISTEN_ADDR: "0.0.0.0:8899"
       DOWNSTREAM_URL: "http://validator:8899"
       BLOCKLIST_PATH: "/app/blocklist.txt"
+      # Sample Solana spam rule, so the stack can demo the Wasm layer too.
+      WASM_PLUGIN_PATH: "/app/plugins/zero-fee-filter.wasm"
     ports:
       - "8899:8899"
     volumes:
       - ./blocklist.txt:/app/blocklist.txt:ro
+      - ./plugins/zero-fee-filter.wasm:/app/plugins/zero-fee-filter.wasm:ro
     depends_on:
       validator:
         condition: service_healthy

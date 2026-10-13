@@ -179,16 +179,14 @@ read -r c r < <(send_tx sendTransaction "$(sol_tx "$CLEAN")" ',{"encoding":"base
 expect_allowed "$c" "$r" "unlisted signer"
 pause
 
-# External-proxy mode cannot control the process or its rule; stop here.
+# External-proxy mode: no PID, so the SIGHUP reload/swap beats are skipped — but the Wasm
+# rule and spam beats still run (they only need the rule loaded, not process control).
 if [ -n "$EXTERNAL" ]; then
-    banner "RESULT"
-    echo -e "  ${G}passed: $PASS${X}   ${R}failed: $FAIL${X}"
-    info "external proxy: hot-reload / rule-swap beats need process control — run without PROXY for those."
-    [ "$FAIL" -eq 0 ]
-    exit
+    info "external proxy in use: skipping the SIGHUP hot-reload/rule-swap beats (no process control)."
 fi
 
 # ═══ BEAT 4 — SIGHUP hot reload ═════════════════════════════════════════════
+if [ -z "$EXTERNAL" ]; then
 banner "BEAT 4 — New threat intel live in <1s, no restart"
 NEWKEY=$(python3 -c "import os;print(os.urandom(32).hex())")
 read -r c r < <(send_tx sendTransaction "$(sol_tx "$NEWKEY")" ',{"encoding":"base64"}')
@@ -200,6 +198,7 @@ read -r c r < <(send_tx sendTransaction "$(sol_tx "$NEWKEY")" ',{"encoding":"bas
 expect_blocked "$c" "$r" "same transaction, after hot reload"
 ok "list is now $(len_list) entries — swapped atomically, zero dropped connections"
 pause
+fi
 
 # ═══ BEAT 5 — Wasm rule (Solana) ════════════════════════════════════════════
 banner "BEAT 5 — Programmable policy: Solana spam filter (Wasm)"
@@ -241,6 +240,7 @@ PY
 fi
 
 # ═══ BEAT 7 — cross-chain rule hot-swap ═════════════════════════════════════
+if [ -z "$EXTERNAL" ]; then
 banner "BEAT 7 — Swap the rule to an EVM guard, live"
 info "replacing the Wasm rule with approve-guard, then SIGHUP (no restart)..."
 cp "$APG" "$RULE"; kill -HUP "$PID"; sleep 0.6
@@ -251,6 +251,7 @@ expect_allowed "$c" "$r" "ERC-20 transfer(address,uint256)"
 info "Same process, same port — a Solana spam filter became an EVM approval guard."
 info "(EVM selector screening shown here; full EVM delivery is covered by the integration tests.)"
 pause
+fi
 
 # ═══ RESULT ═════════════════════════════════════════════════════════════════
 banner "RESULT"
