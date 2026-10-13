@@ -213,8 +213,9 @@ operator-owned, hot-reloadable policy and no central chokepoint.
 - **SIGHUP hot reload** of the local list and Wasm plugin without dropping connections.
 - **60+ tests** (unit, integration, property/fuzz) green; `clippy -D warnings` and
   `cargo fmt --check` clean.
-- **One command to demo**: `bash demo/rpc-demo.sh` (live RPC) or `docker compose up`
-  (self-contained local validator). See `DEMO.md`.
+- **One command to demo**: `bash demo/demo.sh` (story), `WALLET=1 bash demo/demo.sh`
+  (real wallet on localhost), or `docker compose up` (self-contained validator). See the
+  demo section in `README.md`.
 
 ## 10. Trade-offs and Honesty
 

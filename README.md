@@ -134,7 +134,7 @@ reach: the clean-path check forwards the transaction downstream, so an unreachab
 read-only RPC turns a clean transaction into a `502`. Aegis never *pretends* to accept a
 transaction it could not have delivered.
 
-### Docker Compose — against a real RPC (recommended for a live demo)
+### Docker Compose — against a real RPC
 
 No local validator, no emulation. Runs Aegis in front of any Solana RPC (Helius,
 Triton, public cluster):
@@ -150,19 +150,6 @@ AEGIS_RPC_URL="https://testnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" \
 AEGIS_PROXY_URL=http://127.0.0.1:8899 bash demo/demo.sh
 ```
 
-### Demo scripts (no Docker needed for these)
-
-All default to the public testnet; set `HELIUS_API_KEY` or `AEGIS_RPC_URL` for Helius/devnet/mainnet.
-
-| Script | Shows |
-|---|---|
-| `bash demo/rehearse.sh` | the full six-beat pitch, with a pass/fail gate (best for recording) |
-| `bash demo/spam-demo.sh` | a spam **burst** blocked at the proxy — volume reduction + compute never reserved |
-| `bash demo/rpc-demo.sh` | a quick live smoke test (reads, one block, latency histogram) |
-| `bash demo/demo.sh` | the same checks against the Docker Compose stack, incl. Grafana counters |
-
-See [DEMO.md](DEMO.md) for what each proves and the stage script.
-
 ### Docker Compose — full local stack (self-contained, offline)
 
 ```bash
@@ -170,9 +157,54 @@ docker compose up --build
 bash demo/demo.sh
 ```
 
-Starts `aegis` (:8899), `solana-test-validator` (host :8900), Prometheus (:9090) and
-Grafana (http://localhost:3001). The validator image is `linux/amd64`; on Apple silicon it
-runs under emulation, so first start can take a few minutes.
+Aegis `:8899`, `solana-test-validator` (host `:8900`), Prometheus `:9090`, Grafana
+`http://localhost:3001` (dashboard uid `aegis-svm-v1`). The validator image is `linux/amd64`;
+on Apple silicon it runs under emulation, so first start can take a few minutes. Only the
+Docker stacks include Grafana.
+
+### Demo script
+
+One script, three modes. Point it at **any** RPC via `AEGIS_RPC_URL` / `HELIUS_API_KEY` — only
+the URL changes; no Docker needed.
+
+```bash
+cargo build --release -p aegis-proxy
+
+bash demo/demo.sh                                   # full story vs public devnet (pass/fail gate)
+AEGIS_RPC_URL="https://devnet.helius-rpc.com/?api-key=$HELIUS_API_KEY" bash demo/demo.sh
+SPAM=500 bash demo/demo.sh                          # bigger spam burst (SPAM=0 to skip)
+WALLET=1 bash demo/demo.sh                           # interactive: point a wallet here
+PROXY=http://127.0.0.1:8899 bash demo/demo.sh        # target a running proxy (e.g. the Compose stack)
+```
+
+Automated beats: live reads pass through → blocklisted signer rejected → clean tx forwarded →
+`SIGHUP` hot-reload flips a live tx allowed→blocked → Wasm spam rule drops a high-CU zero-fee
+tx → spam **burst** (N blocked, 0 forwarded, compute never reserved) → cross-chain rule
+hot-swap (`approve()` blocked, `transfer()` passes). Exit code is 0 only if every beat verified.
+
+#### Wallet demo (`WALLET=1`)
+
+A wallet broadcasts through the RPC configured for its network — not the dApp's provider. So
+Aegis goes in the middle by **being the wallet's RPC endpoint**, exactly as a WAF replaces an
+origin URL. Point the wallet at Aegis, send to a blocklisted address, and it is refused at the
+edge; the transaction never reaches the chain.
+
+```bash
+WALLET=1 bash demo/demo.sh                       # Solana Devnet (Phantom)
+CHAIN=base WALLET=1 bash demo/demo.sh            # Base Sepolia (Phantom/MetaMask EVM)
+```
+
+Phantom: **Settings → Developer Settings → enable testnet** → set the Solana Devnet RPC URL to
+`http://127.0.0.1:8899`. MetaMask: **Settings → Networks → Base Sepolia → RPC URL** = the
+printed URL. localhost is fine; `TUNNEL=1` adds a cloudflared `https` URL only if a wallet
+rejects a non-https endpoint. One run fronts one upstream chain.
+
+> MetaMask estimates gas via the same RPC before sending, so it shows a *gas-estimation* error
+> rather than the raw JSON-RPC text. The rejection is still Aegis — watch the terminal log.
+
+> Aegis rejections are identified by `error.data.rule_id` (present on its own rejections, absent
+> on downstream node errors). JSON-RPC codes alone can collide with the chain — e.g. Solana
+> itself returns `-32002` for a failed transaction simulation.
 
 ---
 
@@ -270,10 +302,7 @@ plugins/
   *.wasm                 pre-built plugins
 infra/                   Prometheus + Grafana provisioning
 demo/
-  rehearse.sh            six-beat pitch (recommended)
-  spam-demo.sh           spam burst → volume reduction
-  rpc-demo.sh            live smoke test
-  demo.sh                checks against the Compose stack
+  demo.sh                one script, three modes (story / wallet / external proxy)
 ```
 
 ## Known limitations

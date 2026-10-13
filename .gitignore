@@ -6,3 +6,4 @@
 !plugins/approve-guard.wasm
 .env
 *.log
+RECORDING.md
