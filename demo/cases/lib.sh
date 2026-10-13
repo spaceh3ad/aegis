@@ -27,6 +27,16 @@ ANVIL="${AEGIS_ANVIL_URL:-http://127.0.0.1:8545}"
 EVM_FROM="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"   # anvil account #0
 EVM_KEY="0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 
+# txbuild.py vendors base58 (no third-party deps), but evmtx.py signs with eth_account, which
+# not every python3 has. Pick the first interpreter that can import it. Override with AEGIS_PYTHON.
+PY="${AEGIS_PYTHON:-}"
+if [ -z "$PY" ]; then
+  for cand in python3 /opt/anaconda3/bin/python3 /opt/homebrew/bin/python3; do
+    if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import eth_account' >/dev/null 2>&1; then PY="$cand"; break; fi
+  done
+  [ -z "$PY" ] && PY=python3
+fi
+
 R='\033[0;31m'; G='\033[0;32m'; Y='\033[1;33m'; B='\033[1m'; C='\033[0;36m'; X='\033[0m'
 say(){  echo -e "${B}$*${X}"; }
 ok(){   echo -e "  ${G}✓${X} $*"; }
@@ -54,7 +64,7 @@ use_blocklist(){ for a in "$@"; do grep -qxF "$a" "$RUN/blocklist.txt" 2>/dev/nu
 reset_blocklist(){ cp "$ROOT/blocklist.txt" "$RUN/blocklist.txt"; sig_proxy; }
 
 require_aegis(){
-  curl -sf "$PROXY_SOL/metrics" >/dev/null 2>&1 || { warn "Aegis not reachable at $PROXY_SOL"; warn "start it:  bash demo/cases/seed.sh && docker compose up -d"; exit 1; }
+  curl -sf "$PROXY_SOL/metrics" >/dev/null 2>&1 || { warn "Aegis not reachable at $PROXY_SOL"; warn "start it:  bash demo/cases/setup.sh (after starting the host chains)"; exit 1; }
 }
 
 # ── JSON-RPC ────────────────────────────────────────────────────────────────
@@ -73,7 +83,7 @@ d=json.load(sys.stdin); e=d.get('error') or {}
 print(e.get('code','ok'), (e.get('data') or {}).get('rule_id') or '-')" 2>/dev/null; }
 
 # Thin reporters: one line each.
-report_block(){ [ "$1" != "-" ] && ok "blocked by $1" || warn "expected a block, got no rule_id (code=$1)"; }
+report_block(){ [ "$1" != "-" ] && ok "blocked by $1" || warn "expected a block, but Aegis returned no rule_id (request reached the node)"; }
 report_allow(){ [ "$1" = "-" ] && ok "allowed" || warn "unexpectedly blocked by $1"; }
 report_drop(){  [ "$1" = "204" ] && ok "dropped (HTTP 204)" || warn "expected 204, got $1"; }
 

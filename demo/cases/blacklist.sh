@@ -2,7 +2,11 @@
 # CASE 1 — blacklist (basic + LUT-delivered sanction).
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"; require_aegis
 SAN=$(art sanctioned.pub); LUT=$(art lut.txt); PAY=$(art payprog.txt)
-SAN_HEX=$(python3 -c "import base58;print(base58.b58decode('$SAN').hex())")
+SAN_HEX=$(python3 "$CASES/b58.py" "$SAN")
+
+# Self-contained: start from the repo baseline so a re-run doesn't inherit the key this case
+# appended on a previous run (which would make the "clean recipient" step falsely blocked).
+reset_blocklist
 
 say "clean recipient (not listed)"
 read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" simple "$SAN_HEX")"); report_allow "$rule"

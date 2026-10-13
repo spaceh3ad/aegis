@@ -8,9 +8,13 @@ Usage:
   txbuild.py lut <program_b58> <lut_b58>
 """
 import base64
+import os
 import sys
 
-import base58
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import b58
+
+base58 = b58  # local vendored module; no third-party dependency
 
 
 def u16(n: int) -> bytes:

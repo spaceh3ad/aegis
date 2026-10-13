@@ -7,10 +7,10 @@ say "load program-guard (SVM: SPL Token program; EVM: selector 0x23b872dd)"
 set_rule program-guard
 
 say "evm transfer() — allowed"
-read -r code rule < <(send_evm "$(python3 "$CASES/evmtx.py" transfer "$TOKEN" "$TO" 1 "$(evm_nonce)")"); report_allow "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transfer "$TOKEN" "$TO" 1 "$(evm_nonce)")"); report_allow "$rule"
 
 say "evm transferFrom() — blocked by selector"
-read -r code rule < <(send_evm "$(python3 "$CASES/evmtx.py" transferfrom "$TOKEN" "$EVM_FROM" "$TO" 1 "$(evm_nonce)")"); report_block "$rule"
+read -r code rule < <(send_evm "$("$PY" "$CASES/evmtx.py" transferfrom "$TOKEN" "$EVM_FROM" "$TO" 1 "$(evm_nonce)")"); report_block "$rule"
 
 say "svm: invoking the SPL Token program — blocked"
 read -r code rule < <(send_sol "$(python3 "$CASES/txbuild.py" program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA)"); report_block "$rule"
