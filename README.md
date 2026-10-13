@@ -114,31 +114,11 @@ The same binary serves any chain. Point `DOWNSTREAM_URL` at a Solana RPC or an E
 
 ## Quick start
 
-```bash
-cargo build --release -p aegis-proxy
-
-# Solana (point DOWNSTREAM_URL at any JSON-RPC: local node, Helius, Triton, public cluster)
-DOWNSTREAM_URL=https://api.testnet.solana.com ./target/release/aegis-proxy
-
-# EVM (e.g. Base / Arbitrum / Ethereum node)
-DOWNSTREAM_URL=http://127.0.0.1:8545 LISTEN_ADDR=0.0.0.0:8546 ./target/release/aegis-proxy
-
-# With operator-selected threat feeds and a Wasm rule
-THREAT_FEEDS="seal=https://example.org/seal.txt,internal=https://intel.corp/list.txt" \
-WASM_PLUGIN_PATH=plugins/zero-fee-filter.wasm \
-./target/release/aegis-proxy
-```
-
-`sendTransaction` is only enforced when `DOWNSTREAM_URL` is a node Aegis can actually
-reach: the clean-path check forwards the transaction downstream, so an unreachable or
-read-only RPC turns a clean transaction into a `502`. Aegis never *pretends* to accept a
-transaction it could not have delivered.
-
-### Docker Compose — Aegis in Docker, chains on the host
-
-`docker compose up` runs **Aegis only** (two instances of the same image) plus Prometheus and
-Grafana. The chains run natively on your host — a real arm64 `solana-test-validator` and
-`anvil`, no emulation — and Aegis reaches them through `host.docker.internal`:
+The supported way to run Aegis is **Docker** — one self-contained image, no Rust toolchain,
+no OpenSSL, no platform-specific binary. `docker compose up` runs **Aegis only** (two
+instances of the same image) plus Prometheus and Grafana. The chains run natively on your
+host — a real `solana-test-validator` and `anvil`, no emulation — and Aegis reaches them
+through `host.docker.internal`:
 
 | Container | Port | Upstream (host) |
 |---|---|---|
@@ -174,6 +154,36 @@ INFO allowed tx=evm target=0xe7f1… signer=0xf39f… what=selector=0xa9059cbb
 WARN DROPPED tx=svm target=Tokenkeg… what=cu=0 fee=0
 INFO wasm plugin reloaded plugin=/app/policy/rule.wasm
 ```
+
+### Build from source (development)
+
+Run this way only if you're developing Aegis. It needs the **Rust toolchain (1.94+)** and, on
+Linux, **`pkg-config` + `libssl-dev`**. The release binary is platform-specific (macOS arm64,
+Linux x86-64, …) and is **not** committed — build it where you'll run it. For anything that
+isn't a local dev loop, use Docker.
+
+```bash
+cargo build --release -p aegis-proxy
+
+# Solana (point DOWNSTREAM_URL at any JSON-RPC: local node, Helius, Triton, public cluster)
+DOWNSTREAM_URL=https://api.testnet.solana.com ./target/release/aegis-proxy
+
+# EVM (e.g. Base / Arbitrum / Ethereum node)
+DOWNSTREAM_URL=http://127.0.0.1:8545 LISTEN_ADDR=0.0.0.0:8546 ./target/release/aegis-proxy
+
+# With operator-selected threat feeds and a Wasm rule
+THREAT_FEEDS="seal=https://example.org/seal.txt,internal=https://intel.corp/list.txt" \
+WASM_PLUGIN_PATH=plugins/zero-fee-filter.wasm \
+./target/release/aegis-proxy
+```
+
+In this mode the two proxies are separate processes, so point each at its own chain and policy
+directory via the env vars above.
+
+> `sendTransaction` is only enforced when `DOWNSTREAM_URL` is a node Aegis can actually reach:
+> the clean-path check forwards the transaction downstream, so an unreachable or read-only RPC
+> turns a clean transaction into a `502`. Aegis never *pretends* to accept a transaction it could
+> not have delivered.
 
 ### The demo cases
 
