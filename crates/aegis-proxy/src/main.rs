@@ -14,7 +14,16 @@ use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt().json().init();
+    // LOG_FORMAT=pretty gives human-readable lines for the side-by-side demo terminal;
+    // the default stays JSON for machine ingestion.
+    if std::env::var("LOG_FORMAT").as_deref() == Ok("pretty") {
+        tracing_subscriber::fmt()
+            .without_time()
+            .with_target(false)
+            .init();
+    } else {
+        tracing_subscriber::fmt().json().init();
+    }
 
     let cfg = Config::load().unwrap_or_else(|e| panic!("invalid configuration: {e}"));
     info!(listen_addr = %cfg.listen_addr, downstream = %cfg.downstream_url, "Aegis starting");

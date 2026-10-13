@@ -122,7 +122,42 @@ async fn screen(state: &AppState, req: &Value) -> Option<Verdict> {
                 .and_then(|e| e.evaluate(&rule_input))
         })
         .unwrap_or(Verdict::Allow);
+    log_verdict(&rule_input, &verdict);
     count(state, verdict)
+}
+
+/// One human-readable line per screened transaction, for the side-by-side demo terminal.
+fn log_verdict(input: &aegis_core::RuleInput, verdict: &Verdict) {
+    let target = input
+        .programs
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "-".to_string());
+    let signer = input
+        .signers
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "-".to_string());
+    let what = match input.chain {
+        "evm" => format!("selector={}", input.selector.as_deref().unwrap_or("-")),
+        _ => format!("cu={} fee={}", input.cu_requested, input.priority_fee),
+    };
+    match verdict {
+        Verdict::Block { rule_id, .. } => tracing::warn!(
+            rule = %rule_id,
+            tx = %input.chain,
+            target = %target,
+            signer = %signer,
+            %what,
+            "BLOCKED"
+        ),
+        Verdict::Drop => {
+            tracing::warn!(tx = %input.chain, target = %target, signer = %signer, %what, "DROPPED")
+        }
+        Verdict::Allow => {
+            tracing::info!(tx = %input.chain, target = %target, signer = %signer, %what, "allowed")
+        }
+    }
 }
 
 // Resolution failures fall back to static keys only. Each failure mode is one the node

@@ -1,6 +1,11 @@
 /target/
 /plugins/zero-fee-filter/target/
 /plugins/approve-guard/target/
+/plugins/*/target/
+/demo/fixtures/solana/*/target/
+/demo/fixtures/erc20/out/
+/demo/fixtures/erc20/cache/
+/demo/.run/
 *.wasm
 !plugins/zero-fee-filter.wasm
 !plugins/approve-guard.wasm
